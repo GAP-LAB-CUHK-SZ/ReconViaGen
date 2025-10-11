@@ -10,6 +10,7 @@
 **Alpha Demo**: https://huggingface.co/spaces/Stable-X/ReconViaGen.
 We will release the complete model later. Stay tuned! ✨ We welcome feedback on failure cases to help improve the model.
 
+- Sorry, our code open source process is stuck in the company's review, so our code open source time will be delayed. We apologize for this.
 ## TODO
 - [ ] Code release 
 - [ ] Technical report
