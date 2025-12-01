@@ -26,3 +26,14 @@ We will release the complete model later. Stay tuned! ✨ We welcome feedback on
 ## TODO
 - [ ] Code release 
 - [x] Technical report
+
+## Citation
+
+```bibtex
+@article{chang2025reconviagen,
+        title={ReconViaGen: Towards Accurate Multi-view 3D Object Reconstruction via Generation},
+        author={Chang, Jiahao and Ye, Chongjie and Wu, Yushuang and Chen, Yuantao and Zhang, Yidan and Luo, Zhongjin and Li, Chenghong and Zhi, Yihao and Han, Xiaoguang},
+        journal={arXiv preprint arXiv:2510.23306},
+        year={2025}
+}
+```
