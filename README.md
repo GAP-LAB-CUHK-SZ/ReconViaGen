@@ -21,11 +21,7 @@
 **Alpha Demo**: https://huggingface.co/spaces/Stable-X/ReconViaGen.
 We will release the complete model later. Stay tuned! ✨ We welcome feedback on failure cases to help improve the model.
 
-- Sorry, our code open source process is stuck in the company's review, so our code open source time will be delayed. We apologize for this.
-- An [unofficial implementaton of ReconViaGen](https://github.com/estheryang11/ReconViaGen) is releasaed! Thanks to [estheryang11](https://github.com/estheryang11) a lot!
-## TODO
-- [ ] Code release 
-- [x] Technical report
+**News**: An [unofficial implementaton of ReconViaGen](https://github.com/estheryang11/ReconViaGen) is releasaed! Thanks to [estheryang11](https://github.com/estheryang11) a lot!
 
 ## Citation
 
