@@ -1,0 +1,23 @@
+# ninja log v7
+7	3238	1773840242496575199	/root/jiahao/code/ReconViaGen/wheels/TRELLIS.2/o-voxel/build/temp.linux-x86_64-cpython-310/src/serialize/hilbert.o	620d04f51ea188c6
+8	3250	1773840242497575207	/root/jiahao/code/ReconViaGen/wheels/TRELLIS.2/o-voxel/build/temp.linux-x86_64-cpython-310/src/serialize/z_order.o	7b7fac2eb5a036d1
+6	26401	1773840242495575192	/root/jiahao/code/ReconViaGen/wheels/TRELLIS.2/o-voxel/build/temp.linux-x86_64-cpython-310/src/io/svo.o	8d261fa7e3f60ca8
+6	26485	1773840242495575192	/root/jiahao/code/ReconViaGen/wheels/TRELLIS.2/o-voxel/build/temp.linux-x86_64-cpython-310/src/io/filter_parent.o	eb54ec7936105d11
+6	27338	1773840242495575192	/root/jiahao/code/ReconViaGen/wheels/TRELLIS.2/o-voxel/build/temp.linux-x86_64-cpython-310/src/io/filter_neighbor.o	e88f010a31580857
+5	27442	1773840242494575185	/root/jiahao/code/ReconViaGen/wheels/TRELLIS.2/o-voxel/build/temp.linux-x86_64-cpython-310/src/ext.o	dce684efc2e5d24c
+4	29760	1773840242493575177	/root/jiahao/code/ReconViaGen/wheels/TRELLIS.2/o-voxel/build/temp.linux-x86_64-cpython-310/src/convert/volumetic_attr.o	2348c129208ac18d
+3	39725	1773840242493648893	/root/jiahao/code/ReconViaGen/wheels/TRELLIS.2/o-voxel/build/temp.linux-x86_64-cpython-310/src/convert/flexible_dual_grid.o	26466d7700cd4124
+7	61383	1773840242496575199	/root/jiahao/code/ReconViaGen/wheels/TRELLIS.2/o-voxel/build/temp.linux-x86_64-cpython-310/src/rasterize/rasterize.o	e7bfe8d84331d55c
+5	61977	1773840242494575185	/root/jiahao/code/ReconViaGen/wheels/TRELLIS.2/o-voxel/build/temp.linux-x86_64-cpython-310/src/hash/hash.o	51b59d781ec49627
+7	62176	1773840242496575199	/root/jiahao/code/ReconViaGen/wheels/TRELLIS.2/o-voxel/build/temp.linux-x86_64-cpython-310/src/serialize/api.o	513b59da1fd57a99
+124	2821	1773840767538526413	/root/jiahao/code/ReconViaGen/wheels/TRELLIS.2/o-voxel/build/temp.linux-x86_64-cpython-310/src/serialize/z_order.o	567b15870b530455
+124	2891	1773840767537526406	/root/jiahao/code/ReconViaGen/wheels/TRELLIS.2/o-voxel/build/temp.linux-x86_64-cpython-310/src/serialize/hilbert.o	504223559c5d990d
+118	20544	1773840767531526360	/root/jiahao/code/ReconViaGen/wheels/TRELLIS.2/o-voxel/build/temp.linux-x86_64-cpython-310/src/io/svo.o	7c128174a875bf27
+117	20896	1773840767530526352	/root/jiahao/code/ReconViaGen/wheels/TRELLIS.2/o-voxel/build/temp.linux-x86_64-cpython-310/src/io/filter_parent.o	e5468b5c5ecd556e
+117	22254	1773840767530526352	/root/jiahao/code/ReconViaGen/wheels/TRELLIS.2/o-voxel/build/temp.linux-x86_64-cpython-310/src/io/filter_neighbor.o	491bb1aef67b902b
+116	22401	1773840767529526345	/root/jiahao/code/ReconViaGen/wheels/TRELLIS.2/o-voxel/build/temp.linux-x86_64-cpython-310/src/ext.o	7d9f58682fc34f85
+114	24134	1773840767528526337	/root/jiahao/code/ReconViaGen/wheels/TRELLIS.2/o-voxel/build/temp.linux-x86_64-cpython-310/src/convert/volumetic_attr.o	b48d576157aafe9e
+110	33552	1773840767523526299	/root/jiahao/code/ReconViaGen/wheels/TRELLIS.2/o-voxel/build/temp.linux-x86_64-cpython-310/src/convert/flexible_dual_grid.o	2f6b716cc8963ec9
+116	58234	1773840767529526345	/root/jiahao/code/ReconViaGen/wheels/TRELLIS.2/o-voxel/build/temp.linux-x86_64-cpython-310/src/hash/hash.o	48398252ff629909
+119	60777	1773840767532526368	/root/jiahao/code/ReconViaGen/wheels/TRELLIS.2/o-voxel/build/temp.linux-x86_64-cpython-310/src/rasterize/rasterize.o	7a3fcb3ac7f29257
+120	63914	1773840767533526375	/root/jiahao/code/ReconViaGen/wheels/TRELLIS.2/o-voxel/build/temp.linux-x86_64-cpython-310/src/serialize/api.o	65fc2b366ce7b131

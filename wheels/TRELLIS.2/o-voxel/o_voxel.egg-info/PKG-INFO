@@ -1,0 +1,15 @@
+Metadata-Version: 2.4
+Name: o_voxel
+Version: 0.0.1
+Summary: All about voxel.
+Author-email: Jianfeng Xiang <belljig@outlook.com>
+Requires-Python: >=3.8
+Requires-Dist: torch
+Requires-Dist: numpy
+Requires-Dist: plyfile
+Requires-Dist: trimesh
+Requires-Dist: tqdm
+Requires-Dist: zstandard
+Requires-Dist: easydict
+Requires-Dist: cumesh@ git+https://github.com/JeffreyXiang/CuMesh.git
+Requires-Dist: flex_gemm@ git+https://github.com/JeffreyXiang/FlexGEMM.git

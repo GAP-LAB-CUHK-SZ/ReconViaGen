@@ -1,0 +1,47 @@
+ninja_required_version = 1.3
+cxx = c++
+nvcc = /usr/local/cuda/bin/nvcc
+
+cflags = -pthread -B /root/miniconda3/envs/reconviagen/compiler_compat -Wno-unused-result -Wsign-compare -DNDEBUG -fwrapv -O2 -Wall -fPIC -O2 -isystem /root/miniconda3/envs/reconviagen/include -fPIC -O2 -isystem /root/miniconda3/envs/reconviagen/include -fPIC -I/root/jiahao/code/ReconViaGen/wheels/TRELLIS.2/o-voxel/third_party/eigen -I/root/miniconda3/envs/reconviagen/lib/python3.10/site-packages/torch/include -I/root/miniconda3/envs/reconviagen/lib/python3.10/site-packages/torch/include/torch/csrc/api/include -I/usr/local/cuda/include -I/root/miniconda3/envs/reconviagen/include/python3.10 -c
+post_cflags = -O3 -std=c++17 -DTORCH_API_INCLUDE_EXTENSION_H -DTORCH_EXTENSION_NAME=_C
+cuda_cflags = -I/root/jiahao/code/ReconViaGen/wheels/TRELLIS.2/o-voxel/third_party/eigen -I/root/miniconda3/envs/reconviagen/lib/python3.10/site-packages/torch/include -I/root/miniconda3/envs/reconviagen/lib/python3.10/site-packages/torch/include/torch/csrc/api/include -I/usr/local/cuda/include -I/root/miniconda3/envs/reconviagen/include/python3.10 -c
+cuda_post_cflags = -D__CUDA_NO_HALF_OPERATORS__ -D__CUDA_NO_HALF_CONVERSIONS__ -D__CUDA_NO_BFLOAT16_CONVERSIONS__ -D__CUDA_NO_HALF2_OPERATORS__ --expt-relaxed-constexpr --compiler-options ''"'"'-fPIC'"'"'' -O3 -std=c++17 -DTORCH_API_INCLUDE_EXTENSION_H -DTORCH_EXTENSION_NAME=_C -gencode=arch=compute_90,code=compute_90 -gencode=arch=compute_90,code=sm_90
+cuda_dlink_post_cflags = 
+sycl_dlink_post_cflags = 
+ldflags = 
+
+rule compile
+  command = $cxx -MMD -MF $out.d $cflags -c $in -o $out $post_cflags
+  depfile = $out.d
+  deps = gcc
+
+rule cuda_compile
+  depfile = $out.d
+  deps = gcc
+  command = $nvcc --generate-dependencies-with-compile --dependency-output $out.d $cuda_cflags -c $in -o $out $cuda_post_cflags
+
+
+
+
+
+
+
+build /root/jiahao/code/ReconViaGen/wheels/TRELLIS.2/o-voxel/build/temp.linux-x86_64-cpython-310/src/convert/flexible_dual_grid.o: compile /root/jiahao/code/ReconViaGen/wheels/TRELLIS.2/o-voxel/src/convert/flexible_dual_grid.cpp
+build /root/jiahao/code/ReconViaGen/wheels/TRELLIS.2/o-voxel/build/temp.linux-x86_64-cpython-310/src/convert/volumetic_attr.o: compile /root/jiahao/code/ReconViaGen/wheels/TRELLIS.2/o-voxel/src/convert/volumetic_attr.cpp
+build /root/jiahao/code/ReconViaGen/wheels/TRELLIS.2/o-voxel/build/temp.linux-x86_64-cpython-310/src/ext.o: compile /root/jiahao/code/ReconViaGen/wheels/TRELLIS.2/o-voxel/src/ext.cpp
+build /root/jiahao/code/ReconViaGen/wheels/TRELLIS.2/o-voxel/build/temp.linux-x86_64-cpython-310/src/hash/hash.o: cuda_compile /root/jiahao/code/ReconViaGen/wheels/TRELLIS.2/o-voxel/src/hash/hash.cu
+build /root/jiahao/code/ReconViaGen/wheels/TRELLIS.2/o-voxel/build/temp.linux-x86_64-cpython-310/src/io/filter_neighbor.o: compile /root/jiahao/code/ReconViaGen/wheels/TRELLIS.2/o-voxel/src/io/filter_neighbor.cpp
+build /root/jiahao/code/ReconViaGen/wheels/TRELLIS.2/o-voxel/build/temp.linux-x86_64-cpython-310/src/io/filter_parent.o: compile /root/jiahao/code/ReconViaGen/wheels/TRELLIS.2/o-voxel/src/io/filter_parent.cpp
+build /root/jiahao/code/ReconViaGen/wheels/TRELLIS.2/o-voxel/build/temp.linux-x86_64-cpython-310/src/io/svo.o: compile /root/jiahao/code/ReconViaGen/wheels/TRELLIS.2/o-voxel/src/io/svo.cpp
+build /root/jiahao/code/ReconViaGen/wheels/TRELLIS.2/o-voxel/build/temp.linux-x86_64-cpython-310/src/rasterize/rasterize.o: cuda_compile /root/jiahao/code/ReconViaGen/wheels/TRELLIS.2/o-voxel/src/rasterize/rasterize.cu
+build /root/jiahao/code/ReconViaGen/wheels/TRELLIS.2/o-voxel/build/temp.linux-x86_64-cpython-310/src/serialize/api.o: cuda_compile /root/jiahao/code/ReconViaGen/wheels/TRELLIS.2/o-voxel/src/serialize/api.cu
+build /root/jiahao/code/ReconViaGen/wheels/TRELLIS.2/o-voxel/build/temp.linux-x86_64-cpython-310/src/serialize/hilbert.o: cuda_compile /root/jiahao/code/ReconViaGen/wheels/TRELLIS.2/o-voxel/src/serialize/hilbert.cu
+build /root/jiahao/code/ReconViaGen/wheels/TRELLIS.2/o-voxel/build/temp.linux-x86_64-cpython-310/src/serialize/z_order.o: cuda_compile /root/jiahao/code/ReconViaGen/wheels/TRELLIS.2/o-voxel/src/serialize/z_order.cu
+
+
+
+
+
+
+
+
