@@ -531,11 +531,11 @@ class Trellis2ImageTo3DPipeline(Pipeline):
         sample = noise
         n = len(conds)
 
-        # 对 average_right / weighted_average / adaptive_guidance_weight 策略，
+        # 对 average_right / weighted_average / adaptive_guidance_weight / fixed_guidance_rescale 策略，
         # 在循环前提取 CFG 参数。CFG 专属 key 不应透传给底层原始模型。
         _CFG_KEYS = {'guidance_strength', 'guidance_rescale', 'guidance_interval'}
 
-        if strategy in ('average_right', 'weighted_average', 'adaptive_guidance_weight'):
+        if strategy in ('average_right', 'weighted_average', 'adaptive_guidance_weight', 'fixed_guidance_rescale'):
             guidance_strength = all_params.get('guidance_strength', 3.0)
             guidance_rescale  = all_params.get('guidance_rescale', 0.0)
             neg_cond          = conds[0]['neg_cond']
