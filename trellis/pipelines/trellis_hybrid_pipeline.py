@@ -145,6 +145,9 @@ class TrellisHybridPipeline:
         noise   = torch.randn(1, ss_flow.in_channels, reso, reso, reso).to(vp.device)
 
         merged_params = {**vp.sparse_structure_sampler_params, **ss_sampler_params}
+        # Remove legacy GuidanceInterval keys so they don't leak into the model forward
+        for legacy_key in ('cfg_strength', 'cfg_interval'):
+            merged_params.pop(legacy_key, None)
         ss_latent = vp.sparse_structure_sampler.sample(
             ss_flow, noise, **ss_cond, **merged_params, verbose=True
         ).samples

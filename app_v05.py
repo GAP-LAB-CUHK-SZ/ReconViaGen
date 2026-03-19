@@ -222,7 +222,9 @@ def image_to_3d(
     pipeline_type: str,
     # SS params
     ss_guidance_strength: float,
+    ss_guidance_rescale: float,
     ss_sampling_steps: int,
+    ss_rescale_t: float,
     # Shape SLat params
     shape_slat_guidance_strength: float,
     shape_slat_guidance_rescale: float,
@@ -249,8 +251,10 @@ def image_to_3d(
         images.append(img)
 
     ss_params = {
-        "steps":        ss_sampling_steps,
-        "cfg_strength": ss_guidance_strength,
+        "steps":             ss_sampling_steps,
+        "guidance_strength": ss_guidance_strength,
+        "guidance_rescale":  ss_guidance_rescale,
+        "rescale_t":         ss_rescale_t,
     }
     shape_slat_params = {
         "steps":             shape_slat_sampling_steps,
@@ -462,8 +466,12 @@ with gr.Blocks(
                 with gr.Row():
                     ss_guidance_strength = gr.Slider(0.0, 10.0, label="Guidance Strength",
                                                      value=7.5, step=0.1)
+                    ss_guidance_rescale  = gr.Slider(0.0, 1.0,  label="Guidance Rescale",
+                                                     value=0.7, step=0.01)
                     ss_sampling_steps    = gr.Slider(1, 50, label="Sampling Steps",
                                                      value=30, step=1)
+                    ss_rescale_t         = gr.Slider(1.0, 6.0, label="Rescale T",
+                                                     value=5.0, step=0.1)
 
                 gr.Markdown("**Stage 2 · Shape SLat (TRELLIS.2)**")
                 with gr.Row():
@@ -525,7 +533,7 @@ with gr.Blocks(
         image_to_3d,
         inputs=[
             image_prompt, multi_image_strategy, seed, pipeline_type,
-            ss_guidance_strength, ss_sampling_steps,
+            ss_guidance_strength, ss_guidance_rescale, ss_sampling_steps, ss_rescale_t,
             shape_slat_guidance_strength, shape_slat_guidance_rescale,
             shape_slat_sampling_steps, shape_slat_rescale_t,
             tex_slat_guidance_strength, tex_slat_guidance_rescale,
