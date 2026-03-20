@@ -1,0 +1,381 @@
+"""
+Training script for the SLAT (Structured Latent) flow model.
+
+Corresponds to the old train_mv_slat.py, adapted for:
+  - TrellisVGGTTo3DPipeline  (slat_flow_model + slat_vggt_cond)
+  - New dataset: sharded tar files in ProObjaverse-300K
+  - VGGT loaded from "Stable-X/vggt-object-v0-1" (HuggingFace)
+
+Trainable components:
+  1. slat_vggt_cond  (ModulatedSLATMultiViewCond, freshly initialised)
+  2. LoRA adapters on slat_flow_model  (r=128, α=256)
+
+VGGT and all other models are frozen.
+
+Usage:
+  torchrun --nproc_per_node=8 train_slat.py \
+      --data_root /root/public-read/ProObjaverse-300K \
+      --weights   microsoft/TRELLIS-image-large \
+      --save_dir  checkpoints/slat-vggt-lora \
+      [--resume   checkpoints/slat-vggt-lora/epoch=0-step=1000.ckpt]
+"""
+
+import os
+import sys
+import argparse
+import random
+import datetime
+
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import torch.distributed as dist
+import pytorch_lightning as pl
+from pytorch_lightning.callbacks import ModelCheckpoint, StochasticWeightAveraging
+from torch.utils.data import DataLoader, DistributedSampler
+
+# ---- path setup -----------------------------------------------------------
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "wheels", "vggt"))
+
+from dataset import TarDataset, custom_collate, prepare_batch_images
+from trellis.pipelines.trellis_image_to_3d import TrellisImageTo3DPipeline
+from trellis.models.structured_latent_flow import ModulatedSLATMultiViewCond
+import trellis.modules.sparse as sp
+from torchvision import transforms
+
+# VGGT
+from wheels.vggt.vggt.models.vggt import VGGT
+
+
+# ---------------------------------------------------------------------------
+# LightningModule wrapper for SLAT training
+# ---------------------------------------------------------------------------
+
+class SLATTrainer(pl.LightningModule):
+    """
+    Wraps the SLAT-flow-model + slat_vggt_cond for flow-matching training.
+    """
+
+    # DINOv2 normalisation
+    _dino_transform = transforms.Normalize(
+        mean=[0.485, 0.456, 0.406],
+        std=[0.229, 0.224, 0.225],
+    )
+
+    def __init__(
+        self,
+        slat_flow_model: nn.Module,
+        slat_cond: nn.Module,
+        image_cond_model: nn.Module,
+        vggt_model: nn.Module,
+        slat_sampler,
+        slat_normalization: dict,
+        lr: float = 1e-4,
+        cfg_drop_prob: float = 0.1,
+        vggt_dtype: torch.dtype = torch.float16,
+    ):
+        super().__init__()
+        self.slat_flow_model = slat_flow_model
+        self.slat_cond = slat_cond
+        self.image_cond_model = image_cond_model
+        self.vggt_model = vggt_model
+        self.slat_sampler = slat_sampler
+        self.slat_normalization = slat_normalization
+        self.lr = lr
+        self.cfg_drop_prob = cfg_drop_prob
+        self.vggt_dtype = vggt_dtype
+
+    # ------------------------------------------------------------------
+    @torch.no_grad()
+    def _encode_image(self, image: torch.Tensor) -> torch.Tensor:
+        """
+        DINOv2 encoding.  image: (B*N, 3, 518, 518) in [0,1], float32.
+        Returns (B*N, n_tokens, 1024).
+        """
+        image = image.to(self.device)
+        image = self._dino_transform(image)
+        feats = self.image_cond_model(image, is_training=True)["x_prenorm"]
+        feats = F.layer_norm(feats, feats.shape[-1:])
+        return feats
+
+    def _prepare_images(self, images: torch.Tensor, alpha: torch.Tensor):
+        """
+        Crop foreground, resize to 518.
+        images: (B*N, 3, H, W); alpha: (B*N, 1, H, W)
+        Returns (B*N, 3, 518, 518).
+        """
+        mask = alpha > 0.5
+        out = prepare_batch_images(images, mask.float(), resolution=518, padding_factor=1.1)
+        return out
+
+    # ------------------------------------------------------------------
+    def get_input(self, batch):
+        """
+        Prepare (targets, cond, noise) for the SLAT flow-matching loss.
+
+        targets : SparseTensor (normalised)
+        cond    : list of (B, n_tok, 1024)  per-view conditioning
+        noise   : SparseTensor (Gaussian)
+        """
+        flow_dtype = next(self.slat_flow_model.parameters()).dtype
+
+        std  = torch.tensor(self.slat_normalization["std"],  device=self.device)[None].to(flow_dtype)
+        mean = torch.tensor(self.slat_normalization["mean"], device=self.device)[None].to(flow_dtype)
+
+        images = batch["ref_image"].to(self.vggt_dtype)   # (B, N, 3, H, W)
+        alpha  = batch["alpha"].to(torch.float32)          # (B, N, 1, H, W)
+
+        b, n, c, h, w = images.shape
+        n_use = random.randint(1, n)
+        images = images[:, :n_use]
+        alpha  = alpha[:, :n_use]
+
+        images_flat = F.interpolate(
+            images.reshape(b * n_use, c, h, w), 518, mode="bilinear", align_corners=False
+        )
+        alpha_flat = F.interpolate(
+            alpha.reshape(b * n_use, 1, h, w), 518, mode="nearest"
+        )
+
+        images_flat = self._prepare_images(
+            images_flat.float(), alpha_flat.float()
+        ).to(self.vggt_dtype)
+
+        images_for_vggt = images_flat.reshape(b, n_use, c, 518, 518)
+
+        # ---- VGGT (frozen) -------------------------------------------
+        with torch.no_grad():
+            with torch.cuda.amp.autocast(dtype=self.vggt_dtype):
+                aggregated_tokens_list, _ = self.vggt_model.aggregator(images_for_vggt)
+
+        # ---- DINOv2 (frozen) -----------------------------------------
+        with torch.no_grad():
+            image_cond = self._encode_image(
+                images_flat.float()
+            ).reshape(b, n_use, -1, 1024).to(flow_dtype)  # (B, N, n_tok, 1024)
+
+        # ---- slat_vggt_cond ------------------------------------------
+        # Returns (B, N, n_tok, 1024) → split into per-view list
+        cond = self.slat_cond(aggregated_tokens_list, image_cond).reshape(
+            b, n_use, -1, 1024
+        )
+        cond = [c.squeeze(1) for c in cond.split(1, dim=1)]  # list of (B, n_tok, 1024)
+
+        if random.random() < self.cfg_drop_prob:
+            cond = [torch.zeros_like(c) for c in cond]
+
+        # ---- Sparse latent targets -----------------------------------
+        target_feats  = batch["target_feats"].to(flow_dtype)   # (sum_N, 8)
+        target_coords = batch["target_coords"]                  # (sum_N, 4)
+
+        targets = sp.SparseTensor(target_feats, target_coords).to(self.device)
+        targets = (targets - mean) / std
+
+        noise = sp.SparseTensor(
+            feats=torch.randn_like(target_feats).to(self.device),
+            coords=target_coords.to(self.device),
+        )
+        return targets, cond, noise, b
+
+    # ------------------------------------------------------------------
+    def training_step(self, batch, batch_idx):
+        t = torch.rand(1).item()
+        targets, cond, noise, batch_size = self.get_input(batch)
+
+        # flow matching ground truth
+        x_t, gt_v = self.slat_sampler._get_model_gt(targets, t, noise)
+
+        t_tensor = torch.tensor(
+            [1000.0 * t] * batch_size, device=self.device, dtype=torch.float32
+        )
+        pred_v = self.slat_flow_model(x_t, t_tensor, cond)
+
+        # MSE on sparse feats
+        diff = pred_v.feats - gt_v.feats
+        loss = (diff ** 2)
+        valid = ~torch.isnan(loss)
+        loss = loss[valid].mean()
+
+        self.log("train_loss", loss, prog_bar=True, sync_dist=True)
+        return loss
+
+    # ------------------------------------------------------------------
+    def configure_optimizers(self):
+        lora_params = [p for p in self.slat_flow_model.parameters() if p.requires_grad]
+        params = list(self.slat_cond.parameters()) + lora_params
+        return torch.optim.AdamW(params, lr=self.lr, weight_decay=0.0)
+
+
+# ---------------------------------------------------------------------------
+# Build pipeline / models
+# ---------------------------------------------------------------------------
+
+def build_models(weights_path: str, resume_path: str = None, local_rank: int = 0):
+    device = f"cuda:{local_rank}"
+
+    # ---- Base TRELLIS pipeline ----------------------------------------
+    print(f"[rank {local_rank}] Loading TrellisImageTo3DPipeline from {weights_path} ...")
+    pipeline = TrellisImageTo3DPipeline.from_pretrained(weights_path)
+    pipeline.to(device)
+
+    slat_flow_model = pipeline.models["slat_flow_model"]
+    image_cond_model = pipeline.models["image_cond_model"]
+    slat_sampler = pipeline.slat_sampler
+    slat_normalization = pipeline.slat_normalization
+
+    # ---- VGGT -----------------------------------------------------------
+    print(f"[rank {local_rank}] Loading VGGT from Stable-X/vggt-object-v0-1 ...")
+    vggt_model = VGGT.from_pretrained("Stable-X/vggt-object-v0-1")
+    del vggt_model.depth_head
+    del vggt_model.track_head
+    vggt_model = vggt_model.to(device).eval()
+    for p in vggt_model.parameters():
+        p.requires_grad = False
+
+    vggt_dtype = (
+        torch.bfloat16
+        if torch.cuda.get_device_capability(local_rank)[0] >= 8
+        else torch.float16
+    )
+
+    # ---- Freeze SLAT flow model, apply LoRA ---------------------------
+    slat_flow_model = slat_flow_model.to(device).eval()
+    for p in slat_flow_model.parameters():
+        p.requires_grad = False
+
+    from peft import LoraConfig, get_peft_model
+
+    lora_cfg = LoraConfig(
+        r=128,
+        lora_alpha=256,
+        lora_dropout=0.0,
+        target_modules=["to_q", "to_kv", "to_out", "to_qkv"],
+    )
+    slat_flow_model = get_peft_model(slat_flow_model, lora_cfg)
+    slat_flow_model.print_trainable_parameters()
+
+    # ---- DINOv2 frozen --------------------------------------------------
+    image_cond_model = image_cond_model.to(device).eval()
+    for p in image_cond_model.parameters():
+        p.requires_grad = False
+
+    # ---- slat_vggt_cond (freshly initialised) --------------------------
+    slat_cond = ModulatedSLATMultiViewCond(
+        channels=1024,
+        ctx_channels=3072,
+    ).to(device).train()
+    for p in slat_cond.parameters():
+        p.requires_grad = True
+
+    # ---- Optionally load checkpoint ------------------------------------
+    if resume_path is not None and os.path.isfile(resume_path):
+        print(f"[rank {local_rank}] Resuming from {resume_path}")
+        states = torch.load(resume_path, map_location="cpu")
+        if "state_dict" in states:
+            states = states["state_dict"]
+        slat_flow_model.load_state_dict(
+            {k.replace("slat_flow_model.", ""): v for k, v in states.items()},
+            strict=False,
+        )
+        slat_cond.load_state_dict(
+            {k.replace("slat_cond.", ""): v for k, v in states.items()},
+            strict=False,
+        )
+
+    trainer_module = SLATTrainer(
+        slat_flow_model=slat_flow_model,
+        slat_cond=slat_cond,
+        image_cond_model=image_cond_model,
+        vggt_model=vggt_model,
+        slat_sampler=slat_sampler,
+        slat_normalization=slat_normalization,
+        vggt_dtype=vggt_dtype,
+    )
+    return trainer_module
+
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--data_root", default="/root/public-read/ProObjaverse-300K")
+    parser.add_argument("--weights", default="microsoft/TRELLIS-image-large")
+    parser.add_argument("--save_dir", default="checkpoints/slat-vggt-lora")
+    parser.add_argument("--resume", default=None)
+    parser.add_argument("--num_views", type=int, default=6)
+    parser.add_argument("--random_sample", type=int, default=40960)
+    parser.add_argument("--batch_size", type=int, default=2)
+    parser.add_argument("--num_workers", type=int, default=32)
+    parser.add_argument("--max_epochs", type=int, default=50)
+    parser.add_argument("--accum_batches", type=int, default=8)
+    parser.add_argument("--lr", type=float, default=1e-4)
+    args = parser.parse_args()
+
+    # ---- Distributed setup --------------------------------------------
+    local_rank = int(os.environ.get("LOCAL_RANK", 0))
+    world_rank = int(os.environ.get("RANK", 0))
+    world_size = int(os.environ.get("WORLD_SIZE", 1))
+    torch.cuda.set_device(local_rank)
+    if world_size > 1:
+        dist.init_process_group(
+            backend="nccl",
+            timeout=datetime.timedelta(seconds=3600),
+        )
+
+    # ---- Dataset -------------------------------------------------------
+    dataset = TarDataset(
+        data_root=args.data_root,
+        num_views=args.num_views,
+        random_sample=args.random_sample,
+    )
+    sampler = DistributedSampler(dataset, num_replicas=world_size, rank=world_rank)
+    dataloader = DataLoader(
+        dataset,
+        batch_size=args.batch_size,
+        sampler=sampler,
+        collate_fn=custom_collate,
+        num_workers=args.num_workers,
+        pin_memory=True,
+    )
+
+    # ---- Models --------------------------------------------------------
+    module = build_models(
+        weights_path=args.weights,
+        resume_path=args.resume,
+        local_rank=local_rank,
+    )
+
+    # ---- Callbacks ----------------------------------------------------
+    os.makedirs(args.save_dir, exist_ok=True)
+    checkpoint_cb = ModelCheckpoint(
+        dirpath=args.save_dir,
+        every_n_epochs=1,
+        save_top_k=-1,
+        save_weights_only=True,
+    )
+    swa_cb = StochasticWeightAveraging(swa_lrs=1e-2)
+
+    # ---- Trainer ------------------------------------------------------
+    trainer = pl.Trainer(
+        devices=world_size,
+        accelerator="cuda",
+        max_epochs=args.max_epochs,
+        precision=16,
+        strategy="ddp_find_unused_parameters_true",
+        num_sanity_val_steps=0,
+        log_every_n_steps=1,
+        callbacks=[checkpoint_cb, swa_cb],
+        accumulate_grad_batches=args.accum_batches,
+    )
+
+    trainer.fit(module, dataloader)
+
+    if world_size > 1:
+        dist.destroy_process_group()
+
+
+if __name__ == "__main__":
+    main()

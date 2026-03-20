@@ -48,6 +48,7 @@ class Pipeline:
         _models = {
             k: models.from_pretrained(f"{path}/{v}")
             for k, v in args['models'].items()
+            if k != "slat_decoder_rf"
         }
 
         new_pipeline = Pipeline(_models)
