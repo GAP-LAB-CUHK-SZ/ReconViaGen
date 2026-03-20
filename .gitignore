@@ -1,6 +1,6 @@
 *.pyc
-.vscode
+.vscode/
 __pycache__/
 weights/
-tmp
+tmp/
 .gradio/

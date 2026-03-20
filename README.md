@@ -1,31 +1,39 @@
-# ReconViaGen: Towards Accurate Multi-view 3D Object Reconstruction via Generation
+# ReconViaGen
+This repo demonstrates an unofficial pytorch implementation of [ReconViaGen: Towards Accurate Multi-view 3D Object Reconstruction via Generation](https://jiahao620.github.io/reconviagen/). Thanks for the great work of [Jiahao](https://github.com/Jiahao620)!
+![Demo Link](assets/demo.gif)
 
-<!-- <p align="center">
-<a title="Website" href="https://jiahao620.github.io/reconviagen/" target="_blank" rel="noopener noreferrer" style="display: inline-block;">
-  <img src="https://www.obukhov.ai/img/badges/badge-website.svg">
-  <img width="1920" height="1080" alt="videoframe_1023" src="https://github.com/user-attachments/assets/08af0af5-5b83-477f-9d4b-a895488befbb" />
-</a>
-</p> -->
+## Installation
+Clone the repo:
+```bash
+git clone --recursive https://github.com/estheryang11/ReconViaGen.git
+cd ReconViaGen
+```
 
-<div align="center">
+Create a conda environment (optional):
+```bash
+conda create -n reconviagen python=3.10
+conda activate reconviagen
+```
 
+Install dependencies:
+```bash
+# pytorch (select correct CUDA version)
+pip install torch==2.4.0 torchvision==0.19.0 --index-url https://download.pytorch.org/whl/{your-cuda-version}
+pip install spconv-cu{your-cuda-version}==2.3.6 xformers==0.0.27.post2
+# other dependencies
+pip install -r requirements.txt
+```
 
-[![Website](https://raw.githubusercontent.com/prs-eth/Marigold/main/doc/badges/badge-website.svg)](https://jiahao620.github.io/reconviagen) 
-[![Paper](https://img.shields.io/badge/arXiv-PDF-b31b1b)](https://arxiv.org/abs/2510.23306) 
-[![Hugging Face Space](https://img.shields.io/badge/🤗%20Hugging%20Face%20-Space-yellow)](https://huggingface.co/spaces/Stable-X/ReconViaGen) 
+## Local Demo 🤗
+Run by:
+```bash
+python app_refine.py
+```
+To improve the accuracy of camera registration, we adjust and optimize the camera pose estimation strategy in ReconViaGen slightly.
 
- </div>
-
-![teaser](assets/Teaser.png)
-
-**Alpha Demo**: https://huggingface.co/spaces/Stable-X/ReconViaGen.
-We will release the complete model later. Stay tuned! ✨ We welcome feedback on failure cases to help improve the model.
-
-**News**: An [unofficial implementaton of ReconViaGen](https://github.com/estheryang11/ReconViaGen) is releasaed! Thanks to [estheryang11](https://github.com/estheryang11) a lot!
-
-## Citation
-
-```bibtex
+# Acknowledgement
+The origin paper:
+```
 @article{chang2025reconviagen,
         title={ReconViaGen: Towards Accurate Multi-view 3D Object Reconstruction via Generation},
         author={Chang, Jiahao and Ye, Chongjie and Wu, Yushuang and Chen, Yuantao and Zhang, Yidan and Luo, Zhongjin and Li, Chenghong and Zhi, Yihao and Han, Xiaoguang},
