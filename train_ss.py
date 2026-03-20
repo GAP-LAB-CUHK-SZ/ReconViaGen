@@ -33,6 +33,7 @@ import torch.nn.functional as F
 import torch.distributed as dist
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint, StochasticWeightAveraging
+from pytorch_lightning.loggers import TensorBoardLogger
 from torch.utils.data import DataLoader, DistributedSampler
 
 # ---- path setup -----------------------------------------------------------
@@ -205,6 +206,12 @@ class SSTrainer(pl.LightningModule):
         return loss
 
     # ------------------------------------------------------------------
+    def on_train_epoch_start(self):
+        sampler = self.trainer.train_dataloader.sampler
+        if hasattr(sampler, "set_epoch"):
+            sampler.set_epoch(self.current_epoch)
+
+    # ------------------------------------------------------------------
     def on_save_checkpoint(self, checkpoint):
         state_dict = checkpoint["state_dict"]
         checkpoint["state_dict"] = {
@@ -269,7 +276,7 @@ def build_models(weights_path: str, resume_path: str = None, local_rank: int = 0
 
     # ---- Freeze SS flow model, then apply LoRA -------------------------
     ss_flow_model = ss_flow_model.to(device).eval()
-    ss_flow_model.convert_to_fp32()
+    # ss_flow_model.convert_to_fp32()
     for p in ss_flow_model.parameters():
         p.requires_grad = False
 
@@ -383,6 +390,13 @@ def main():
         local_rank=local_rank,
     )
 
+    # ---- Logger --------------------------------------------------------
+    tb_logger = TensorBoardLogger(
+        save_dir="lightning_logs",
+        name=args.save_dir.split("/")[-1],
+        version="",
+    )
+
     # ---- Callbacks -----------------------------------------------------
     os.makedirs(args.save_dir, exist_ok=True)
     checkpoint_cb = ModelCheckpoint(
@@ -402,6 +416,7 @@ def main():
         strategy="ddp_find_unused_parameters_true",
         num_sanity_val_steps=0,
         log_every_n_steps=1,
+        logger=tb_logger,
         callbacks=[checkpoint_cb, swa_cb],
         accumulate_grad_batches=args.accum_batches,
         gradient_clip_val=0.5,

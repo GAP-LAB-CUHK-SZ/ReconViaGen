@@ -21,6 +21,7 @@ Usage:
 """
 
 import os
+os.environ["SPCONV_ALGO"] = 'native'
 import sys
 import argparse
 import random
@@ -32,6 +33,7 @@ import torch.nn.functional as F
 import torch.distributed as dist
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint, StochasticWeightAveraging
+from pytorch_lightning.loggers import TensorBoardLogger
 from torch.utils.data import DataLoader, DistributedSampler
 
 # ---- path setup -----------------------------------------------------------
@@ -71,6 +73,8 @@ class SLATTrainer(pl.LightningModule):
         vggt_model: nn.Module,
         slat_sampler,
         slat_normalization: dict,
+        # slat_decoder_mesh: nn.Module,
+        # slat_decoder_gs: nn.Module,
         lr: float = 1e-4,
         cfg_drop_prob: float = 0.1,
         vggt_dtype: torch.dtype = torch.float16,
@@ -82,6 +86,8 @@ class SLATTrainer(pl.LightningModule):
         self.vggt_model = vggt_model
         self.slat_sampler = slat_sampler
         self.slat_normalization = slat_normalization
+        # self.slat_decoder_mesh = slat_decoder_mesh
+        # self.slat_decoder_gs = slat_decoder_gs
         self.lr = lr
         self.cfg_drop_prob = cfg_drop_prob
         self.vggt_dtype = vggt_dtype
@@ -201,6 +207,18 @@ class SLATTrainer(pl.LightningModule):
         return loss
 
     # ------------------------------------------------------------------
+    def on_train_epoch_start(self):
+        sampler = self.trainer.train_dataloader.sampler
+        if hasattr(sampler, "set_epoch"):
+            sampler.set_epoch(self.current_epoch)
+
+    def on_save_checkpoint(self, checkpoint):
+        state_dict = checkpoint["state_dict"]
+        checkpoint["state_dict"] = {
+            k: v for k, v in state_dict.items()
+            if k.startswith("slat_flow_model.") or k.startswith("slat_cond.")
+        }
+    # ------------------------------------------------------------------
     def configure_optimizers(self):
         lora_params = [p for p in self.slat_flow_model.parameters() if p.requires_grad]
         params = list(self.slat_cond.parameters()) + lora_params
@@ -220,15 +238,23 @@ def build_models(weights_path: str, resume_path: str = None, local_rank: int = 0
     pipeline.to(device)
 
     slat_flow_model = pipeline.models["slat_flow_model"]
+    # slat_flow_model.convert_to_fp32()
+    # slat_flow_model.use_checkpoint = True
+    # for block in slat_flow_model.blocks:
+    #     block.use_checkpoint = True
     image_cond_model = pipeline.models["image_cond_model"]
     slat_sampler = pipeline.slat_sampler
     slat_normalization = pipeline.slat_normalization
+    # slat_decoder_mesh = pipeline.models["slat_decoder_mesh"]
+    # slat_decoder_gs = pipeline.models["slat_decoder_gs"]
 
     # ---- VGGT -----------------------------------------------------------
     print(f"[rank {local_rank}] Loading VGGT from Stable-X/vggt-object-v0-1 ...")
     vggt_model = VGGT.from_pretrained("Stable-X/vggt-object-v0-1")
     del vggt_model.depth_head
     del vggt_model.track_head
+    del vggt_model.point_head
+    del vggt_model.camera_head
     vggt_model = vggt_model.to(device).eval()
     for p in vggt_model.parameters():
         p.requires_grad = False
@@ -290,6 +316,8 @@ def build_models(weights_path: str, resume_path: str = None, local_rank: int = 0
         vggt_model=vggt_model,
         slat_sampler=slat_sampler,
         slat_normalization=slat_normalization,
+        # slat_decoder_mesh = slat_decoder_mesh,
+        # slat_decoder_gs = slat_decoder_gs,
         vggt_dtype=vggt_dtype,
     )
     return trainer_module
@@ -307,10 +335,10 @@ def main():
     parser.add_argument("--resume", default=None)
     parser.add_argument("--num_views", type=int, default=6)
     parser.add_argument("--random_sample", type=int, default=40960)
-    parser.add_argument("--batch_size", type=int, default=2)
-    parser.add_argument("--num_workers", type=int, default=32)
+    parser.add_argument("--batch_size", type=int, default=8)
+    parser.add_argument("--num_workers", type=int, default=16)
     parser.add_argument("--max_epochs", type=int, default=50)
-    parser.add_argument("--accum_batches", type=int, default=8)
+    parser.add_argument("--accum_batches", type=int, default=4)
     parser.add_argument("--lr", type=float, default=1e-4)
     args = parser.parse_args()
 
@@ -348,6 +376,13 @@ def main():
         local_rank=local_rank,
     )
 
+    # ---- Logger -------------------------------------------------------
+    tb_logger = TensorBoardLogger(
+        save_dir="lightning_logs",
+        name=args.save_dir.split("/")[-1],
+        version="",
+    )
+
     # ---- Callbacks ----------------------------------------------------
     os.makedirs(args.save_dir, exist_ok=True)
     checkpoint_cb = ModelCheckpoint(
@@ -367,8 +402,10 @@ def main():
         strategy="ddp_find_unused_parameters_true",
         num_sanity_val_steps=0,
         log_every_n_steps=1,
+        logger=tb_logger,
         callbacks=[checkpoint_cb, swa_cb],
         accumulate_grad_batches=args.accum_batches,
+        gradient_clip_val=0.5,
     )
 
     trainer.fit(module, dataloader)

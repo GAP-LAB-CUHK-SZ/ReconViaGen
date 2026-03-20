@@ -348,7 +348,7 @@ class ModulatedSLATMultiViewCond(nn.Module):
         channels: int,
         ctx_channels: int,
         dtype: Optional[torch.dtype] = torch.float32,
-        use_fp16: bool = True,
+        use_fp16: bool = False,
     ):
         super().__init__()
         self.linear_blocks = nn.ModuleList([
@@ -358,13 +358,13 @@ class ModulatedSLATMultiViewCond(nn.Module):
             )
             for _ in range(4)
         ])
-        self.fuse_blocks = nn.ModuleList([
-            nn.Sequential(
-                nn.Linear(ctx_channels, channels, bias=True),
-                nn.ReLU(),
-            )
-            for _ in range(4)
-        ])
+        # self.fuse_blocks = nn.ModuleList([
+        #     nn.Sequential(
+        #         nn.Linear(ctx_channels, channels, bias=True),
+        #         nn.ReLU(),
+        #     )
+        #     for _ in range(4)
+        # ])
         self.use_fp16 = use_fp16
         if use_fp16:
             self.dtype = torch.float16
