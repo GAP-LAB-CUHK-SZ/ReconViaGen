@@ -163,6 +163,7 @@ def generate_and_extract_glb(
     multiimage_algo: Literal["multidiffusion", "stochastic"],
     mesh_simplify: float,
     texture_size: int,
+    low_vram: bool,
     req: gr.Request,
 ) -> Tuple[dict, str, str, str]:
     """
@@ -189,6 +190,13 @@ def generate_and_extract_glb(
     """
     user_dir = os.path.join(TMP_DIR, str(req.session_hash))
     image_files = [image[0] for image in multiimages]
+
+    # Configure VRAM mode
+    pipeline.low_vram = low_vram
+    if not low_vram:
+        for model in pipeline.models.values():
+            model.to(pipeline._device)
+        pipeline.VGGT_model.to(pipeline._device)
 
     # Generate 3D model
     outputs, _, _ = pipeline.run(
@@ -367,6 +375,7 @@ with demo:
                     slat_guidance_rescale = gr.Slider(0.0, 1.0, label="Guidance Rescale", value=0.5, step=0.01)
                     slat_rescale_t = gr.Slider(1.0, 6.0, label="Rescale T", value=3.0, step=0.1)
                 multiimage_algo = gr.Radio(["stochastic", "multidiffusion"], label="Multi-image Algorithm", value="multidiffusion")
+                low_vram = gr.Checkbox(label="Low VRAM Mode (offload models between stages)", value=True)
 
             with gr.Accordion(label="GLB Extraction Settings", open=False):
                 mesh_simplify = gr.Slider(0.9, 0.98, label="Simplify", value=0.95, step=0.01)
@@ -425,8 +434,8 @@ with demo:
     ).then(
         generate_and_extract_glb,
         inputs=[multiimage_prompt, seed, ss_guidance_strength, ss_sampling_steps, ss_guidance_rescale, ss_rescale_t,
-                slat_guidance_strength, slat_sampling_steps, slat_guidance_rescale, slat_rescale_t, multiimage_algo, 
-                mesh_simplify, texture_size],
+                slat_guidance_strength, slat_sampling_steps, slat_guidance_rescale, slat_rescale_t, multiimage_algo,
+                mesh_simplify, texture_size, low_vram],
         outputs=[output_buf, video_output, model_output, download_glb],
     ).then(
         lambda: (gr.update(interactive=True), gr.update(interactive=True)),
@@ -456,7 +465,7 @@ with demo:
 # Launch the Gradio app
 if __name__ == "__main__":
     pipeline = TrellisVGGTTo3DPipeline.from_pretrained("Stable-X/trellis-vggt-v0-2")
-    pipeline.cuda()
-    pipeline.VGGT_model.cuda()
-    pipeline.birefnet_model.cuda()
+    pipeline._device = torch.device('cuda')
+    pipeline.low_vram = True   # default; updated per-request from UI
+    pipeline.birefnet_model.cuda()  # small model, keep on GPU permanently
     demo.launch()

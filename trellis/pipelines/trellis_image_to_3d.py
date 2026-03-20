@@ -376,7 +376,12 @@ class TrellisImageTo3DPipeline(Pipeline):
             raise ValueError(f"Unsupported type of image: {type(image)}")
         
         image = self.image_cond_model_transform(image).to(self.device)
+        if getattr(self, 'low_vram', False):
+            self.models['image_cond_model'].to(self.device)
         features = self.models['image_cond_model'](image, is_training=True)['x_prenorm']
+        if getattr(self, 'low_vram', False):
+            self.models['image_cond_model'].cpu()
+            torch.cuda.empty_cache()
         if w_layernorm:
             features = F.layer_norm(features, features.shape[-1:])
         return features
@@ -419,6 +424,8 @@ class TrellisImageTo3DPipeline(Pipeline):
         if noise is None:
             noise = torch.randn(num_samples, flow_model.in_channels, reso, reso, reso).to(self.device)
         sampler_params = {**self.sparse_structure_sampler_params, **sampler_params}
+        if getattr(self, 'low_vram', False):
+            flow_model.to(self.device)
         z_s = self.sparse_structure_sampler.sample(
             flow_model,
             noise,
@@ -426,10 +433,17 @@ class TrellisImageTo3DPipeline(Pipeline):
             **sampler_params,
             verbose=True
         ).samples
-        
+        if getattr(self, 'low_vram', False):
+            flow_model.cpu()
+
         # Decode occupancy latent
         decoder = self.models['sparse_structure_decoder']
+        if getattr(self, 'low_vram', False):
+            decoder.to(self.device)
         coords = torch.argwhere(decoder(z_s)>0)[:, [0, 2, 3, 4]].int()
+        if getattr(self, 'low_vram', False):
+            decoder.cpu()
+            torch.cuda.empty_cache()
 
         return coords
     
@@ -454,6 +468,9 @@ class TrellisImageTo3DPipeline(Pipeline):
         # Sample occupancy latent
         flow_model = self.models['sparse_structure_flow_model']
         ss_decoder = self.models['sparse_structure_decoder']
+        if getattr(self, 'low_vram', False):
+            flow_model.to(self.device)
+            ss_decoder.to(self.device)
         ss = ss.float()
         reso = flow_model.resolution
         if noise is None:
@@ -470,10 +487,14 @@ class TrellisImageTo3DPipeline(Pipeline):
             **sampler_params,
             verbose=True
         ).samples
-        
+
         # Decode occupancy latent
         decoder = self.models['sparse_structure_decoder']
         coords = torch.argwhere(decoder(z_s)>0)[:, [0, 2, 3, 4]].int()
+        if getattr(self, 'low_vram', False):
+            flow_model.cpu()
+            ss_decoder.cpu()
+            torch.cuda.empty_cache()
 
         return coords
 
@@ -496,6 +517,9 @@ class TrellisImageTo3DPipeline(Pipeline):
         """
         # Sample occupancy latent
         flow_model = self.models['sparse_structure_flow_model']
+        if getattr(self, 'low_vram', False):
+            flow_model.to(self.device)
+            self.models['sparse_structure_decoder'].to(self.device)
         ss = ss.float()
         reso = flow_model.resolution
         if noise is None:
@@ -545,6 +569,10 @@ class TrellisImageTo3DPipeline(Pipeline):
             verbose=True
         ).samples
         coords = torch.argwhere(ss_decoder(z_s)>0)[:, [0, 2, 3, 4]].int()
+        if getattr(self, 'low_vram', False):
+            flow_model.cpu()
+            self.models['sparse_structure_decoder'].cpu()
+            torch.cuda.empty_cache()
         return coords
 
     def encode_slat(
@@ -575,9 +603,19 @@ class TrellisImageTo3DPipeline(Pipeline):
         ret = {}
         ret['slat'] = slat
         if 'gaussian' in formats:
+            if getattr(self, 'low_vram', False):
+                self.models['slat_decoder_gs'].to(self.device)
             ret['gaussian'] = self.models['slat_decoder_gs'](slat)
+            if getattr(self, 'low_vram', False):
+                self.models['slat_decoder_gs'].cpu()
+                torch.cuda.empty_cache()
         if 'mesh' in formats:
+            if getattr(self, 'low_vram', False):
+                self.models['slat_decoder_mesh'].to(self.device)
             ret['mesh'] = self.models['slat_decoder_mesh'](slat)
+            if getattr(self, 'low_vram', False):
+                self.models['slat_decoder_mesh'].cpu()
+                torch.cuda.empty_cache()
         if 'radiance_field' in formats:
             ret['radiance_field'] = self.models['slat_decoder_rf'](slat)
         return ret
@@ -603,6 +641,8 @@ class TrellisImageTo3DPipeline(Pipeline):
             coords=coords,
         )
         sampler_params = {**self.slat_sampler_params, **sampler_params}
+        if getattr(self, 'low_vram', False):
+            flow_model.to(self.device)
         slat = self.slat_sampler.sample(
             flow_model,
             noise,
@@ -610,6 +650,9 @@ class TrellisImageTo3DPipeline(Pipeline):
             **sampler_params,
             verbose=True
         ).samples
+        if getattr(self, 'low_vram', False):
+            flow_model.cpu()
+            torch.cuda.empty_cache()
 
         std = torch.tensor(self.slat_normalization['std'])[None].to(slat.device)
         mean = torch.tensor(self.slat_normalization['mean'])[None].to(slat.device)
@@ -639,6 +682,11 @@ class TrellisImageTo3DPipeline(Pipeline):
         flow_model = self.models['slat_flow_model']
         slat_decoder_gs = self.models['slat_decoder_gs']
         slat_decoder_mesh = self.models['slat_decoder_mesh']
+        if getattr(self, 'low_vram', False):
+            flow_model.to(self.device)
+            slat_decoder_gs.to(self.device)
+            slat_decoder_mesh.to(self.device)
+            self.dreamsim_model.to(self.device)
         noise = sp.SparseTensor(
             feats=torch.randn(coords.shape[0], flow_model.in_channels).to(self.device),
             coords=coords,
@@ -663,6 +711,12 @@ class TrellisImageTo3DPipeline(Pipeline):
             **sampler_params,
             verbose=True
         ).samples
+        if getattr(self, 'low_vram', False):
+            flow_model.cpu()
+            slat_decoder_gs.cpu()
+            slat_decoder_mesh.cpu()
+            self.dreamsim_model.cpu()
+            torch.cuda.empty_cache()
 
         slat = slat * std + mean
         # from trellis.utils import render_utils, postprocessing_utils
@@ -857,6 +911,12 @@ def zero_module(module):
     return module
 
 class TrellisVGGTTo3DPipeline(TrellisImageTo3DPipeline):
+    @property
+    def device(self) -> torch.device:
+        if getattr(self, '_device', None) is not None:
+            return self._device
+        return super().device
+
     def get_ss_cond(self, image_cond: torch.Tensor, aggregated_tokens_list: List, num_samples: int) -> dict:
         """
         Get the conditioning information for the model.
@@ -867,7 +927,12 @@ class TrellisVGGTTo3DPipeline(TrellisImageTo3DPipeline):
         Returns:
             dict: The conditioning information
         """
+        if self.low_vram:
+            self.sparse_structure_vggt_cond.to(self.device)
         cond = self.sparse_structure_vggt_cond(aggregated_tokens_list, image_cond)
+        if self.low_vram:
+            self.sparse_structure_vggt_cond.cpu()
+            torch.cuda.empty_cache()
         neg_cond = torch.zeros_like(cond)
         return {
             'cond': cond,
@@ -885,7 +950,12 @@ class TrellisVGGTTo3DPipeline(TrellisImageTo3DPipeline):
             dict: The conditioning information
         """
         b, n, _, _ = aggregated_tokens_list[0].shape
+        if self.low_vram:
+            self.slat_vggt_cond.to(self.device)
         cond = self.slat_vggt_cond(aggregated_tokens_list, image_cond).reshape(b, n, -1, 1024)
+        if self.low_vram:
+            self.slat_vggt_cond.cpu()
+            torch.cuda.empty_cache()
         cond = [c.squeeze(1) for c in cond.split(1, dim=1)]
         neg_cond = [torch.zeros_like(c) for c in cond]
         return {
@@ -915,11 +985,16 @@ class TrellisVGGTTo3DPipeline(TrellisImageTo3DPipeline):
         else:
             raise ValueError(f"Unsupported type of image: {type(image)}")
         
+        if self.low_vram:
+            self.VGGT_model.to(self.device)
         with torch.no_grad():
             with torch.cuda.amp.autocast(dtype=self.VGGT_dtype):
                 # Predict attributes including cameras, depth maps, and point maps.
                 aggregated_tokens_list, _ = self.VGGT_model.aggregator(image[None])
-        
+        if self.low_vram:
+            self.VGGT_model.cpu()
+            torch.cuda.empty_cache()
+
         return aggregated_tokens_list, image
 
     def run(
@@ -950,6 +1025,8 @@ class TrellisVGGTTo3DPipeline(TrellisImageTo3DPipeline):
         ss_sampler_params = {**self.sparse_structure_sampler_params, **sparse_structure_sampler_params}
         reso = ss_flow_model.resolution
         ss_noise = torch.randn(num_samples, ss_flow_model.in_channels, reso, reso, reso).to(self.device)
+        if self.low_vram:
+            ss_flow_model.to(self.device)
         ss_latent = self.sparse_structure_sampler.sample(
             ss_flow_model,
             ss_noise,
@@ -957,9 +1034,16 @@ class TrellisVGGTTo3DPipeline(TrellisImageTo3DPipeline):
             **ss_sampler_params,
             verbose=True
         ).samples
+        if self.low_vram:
+            ss_flow_model.cpu()
 
         decoder = self.models['sparse_structure_decoder']
+        if self.low_vram:
+            decoder.to(self.device)
         coords = torch.argwhere(decoder(ss_latent)>0)[:, [0, 2, 3, 4]].int()
+        if self.low_vram:
+            decoder.cpu()
+            torch.cuda.empty_cache()
 
         # cond = {
         #     'cond': image_cond.reshape(n, -1, 1024),
@@ -1076,5 +1160,7 @@ class TrellisVGGTTo3DPipeline(TrellisImageTo3DPipeline):
         model, _ = dreamsim(pretrained=True, device=new_pipeline.device, dreamsim_type="dino_vitb16", cache_dir="weights/dreamsim")
         new_pipeline.dreamsim_model = model
         new_pipeline.dreamsim_model.eval()
+        new_pipeline.low_vram = False
+        new_pipeline._device = None
 
         return new_pipeline

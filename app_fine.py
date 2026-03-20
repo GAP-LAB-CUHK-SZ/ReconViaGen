@@ -258,8 +258,8 @@ def refine_pose_mast3r(rend_image_pil, target_image_pil, original_size, fxy, tar
     target_extrinsic_final = torch.tensor(predict_c2w_refine).inverse().cuda()[None].float()
     return target_extrinsic_final
 
-def pointcloud_registration(rend_image_pil, target_image_pil, original_size, 
-                            fxy, target_extrinsic, rend_depth, target_pointmap, 
+def pointcloud_registration(rend_image_pil, target_image_pil, original_size,
+                            fxy, target_extrinsic, rend_depth, target_pointmap,
                             down_pcd, pcd):
     images_mast3r = load_images_new([rend_image_pil, target_image_pil], size=512, square_ok=True)
     with torch.no_grad():
@@ -380,8 +380,9 @@ def generate_and_extract_glb(
     registration_num_frames: int,
     trellis_stage1_lr: float, 
     trellis_stage1_start_t: float,  
-    trellis_stage2_lr: float, 
+    trellis_stage2_lr: float,
     trellis_stage2_start_t: float,
+    low_vram: bool,
     req: gr.Request,
 ) -> Tuple[dict, str, str, str]:
     """
@@ -409,6 +410,15 @@ def generate_and_extract_glb(
     user_dir = os.path.join(TMP_DIR, str(req.session_hash))
     image_files = [image[0] for image in multiimages]
 
+    # Configure VRAM mode
+    pipeline.low_vram = low_vram
+    if not low_vram:
+        for model in pipeline.models.values():
+            model.to(pipeline._device)
+        pipeline.VGGT_model.to(pipeline._device)
+        pipeline.dreamsim_model.to(pipeline._device)
+        mast3r_model.to(pipeline._device)
+
     # Generate 3D model
     outputs, coords, ss_noise = pipeline.run(
         image=image_files,
@@ -435,6 +445,8 @@ def generate_and_extract_glb(
         try:
             images, alphas = load_and_preprocess_images(multiimages)
             images, alphas = images.to(device), alphas.to(device)
+            if pipeline.low_vram:
+                pipeline.VGGT_model.to(pipeline._device)
             with torch.no_grad():
                 with torch.cuda.amp.autocast(dtype=pipeline.VGGT_dtype):
                     images = images[None]
@@ -478,6 +490,7 @@ def generate_and_extract_glb(
                 scale = np.percentile(np.linalg.norm(distance, axis=1), 97)
                 voxel_size = 1/64*scale*2
                 down_pcd = inlier_cloud.voxel_down_sample(voxel_size)
+
             torch.cuda.empty_cache()
 
             video, rend_extrinsics, rend_intrinsics = render_utils.render_multiview(outputs['gaussian'][0], num_frames=registration_num_frames)
@@ -496,7 +509,8 @@ def generate_and_extract_glb(
             voxel_size = 1/64*scale*2
             pcd = pcd.voxel_down_sample(voxel_size)
             # pcd.points = o3d.utility.Vector3dVector((coords[:,1:].cpu().numpy() + 0.5) / 64 - 0.5)
-
+            if pipeline.low_vram:
+                mast3r_model.to(pipeline._device)
             for k in range(len(image_files)):
                 images = torch.stack([TF.ToTensor()(render_image) for render_image in video['color']] + [TF.ToTensor()(image_files[k].convert("RGB"))], dim=0)
                 # if len(images) == 0:
@@ -564,6 +578,12 @@ def generate_and_extract_glb(
                 
                 target_extrinsics.append(target_extrinsic[j:j+1])
                 target_intrinsics.append(target_intrinsic_tmp[j:j+1])
+            
+            if pipeline.low_vram:
+                pipeline.VGGT_model.cpu()
+                mast3r_model.cpu()
+                torch.cuda.empty_cache()
+            
             target_extrinsics = torch.cat(target_extrinsics, dim=0)
             target_intrinsics = torch.cat(target_intrinsics, dim=0)
             
@@ -761,7 +781,8 @@ with demo:
                 multiimage_algo = gr.Radio(["stochastic", "multidiffusion"], label="Multi-image Algorithm", value="multidiffusion")
                 refine = gr.Radio(["Yes", "No"], label="Refinement of Not", value="Yes")
                 ss_refine = gr.Radio(["noise", "deltav", "No"], label="Sparse Structure refinement of not", value="No")
-                registration_num_frames = gr.Slider(20, 50, label="Number of frames in registration", value=30, step=1)
+                low_vram = gr.Checkbox(label="Low VRAM Mode (offload models between stages)", value=True)
+                registration_num_frames = gr.Slider(10, 50, label="Number of frames in registration", value=20, step=1)
                 trellis_stage1_lr = gr.Slider(1e-4, 1., label="trellis_stage1_lr", value=1e-1, step=5e-4)
                 trellis_stage1_start_t = gr.Slider(0., 1., label="trellis_stage1_start_t", value=0.5, step=0.01)
                 trellis_stage2_lr = gr.Slider(1e-4, 1., label="trellis_stage2_lr", value=1e-1, step=5e-4)
@@ -824,9 +845,9 @@ with demo:
     ).then(
         generate_and_extract_glb,
         inputs=[multiimage_prompt, seed, ss_guidance_strength, ss_sampling_steps, ss_guidance_rescale, ss_rescale_t,
-                slat_guidance_strength, slat_sampling_steps, slat_guidance_rescale, slat_rescale_t, multiimage_algo, 
-                mesh_simplify, texture_size, refine, ss_refine, registration_num_frames, trellis_stage1_lr, 
-                trellis_stage1_start_t, trellis_stage2_lr, trellis_stage2_start_t],
+                slat_guidance_strength, slat_sampling_steps, slat_guidance_rescale, slat_rescale_t, multiimage_algo,
+                mesh_simplify, texture_size, refine, ss_refine, registration_num_frames, trellis_stage1_lr,
+                trellis_stage1_start_t, trellis_stage2_lr, trellis_stage2_start_t, low_vram],
         outputs=[output_buf, video_output, model_output, download_glb],
     ).then(
         lambda: (gr.update(interactive=True), gr.update(interactive=True)),
@@ -856,9 +877,8 @@ with demo:
 # Launch the Gradio app
 if __name__ == "__main__":
     pipeline = TrellisVGGTTo3DPipeline.from_pretrained("Stable-X/trellis-vggt-v0-2")
-    pipeline.cuda()
-    pipeline.VGGT_model.cuda()
-    pipeline.birefnet_model.cuda()
-    pipeline.dreamsim_model.cuda()
-    mast3r_model = AsymmetricMASt3R.from_pretrained("naver/MASt3R_ViTLarge_BaseDecoder_512_catmlpdpt_metric").cuda().eval()  
+    pipeline._device = torch.device('cuda')
+    pipeline.low_vram = True   # default; updated per-request from UI
+    pipeline.birefnet_model.cuda()  # small model, keep on GPU permanently
+    mast3r_model = AsymmetricMASt3R.from_pretrained("naver/MASt3R_ViTLarge_BaseDecoder_512_catmlpdpt_metric").eval()
     demo.launch()
