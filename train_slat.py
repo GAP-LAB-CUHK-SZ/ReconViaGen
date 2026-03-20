@@ -239,9 +239,9 @@ def build_models(weights_path: str, resume_path: str = None, local_rank: int = 0
 
     slat_flow_model = pipeline.models["slat_flow_model"]
     # slat_flow_model.convert_to_fp32()
-    # slat_flow_model.use_checkpoint = True
-    # for block in slat_flow_model.blocks:
-    #     block.use_checkpoint = True
+    slat_flow_model.use_checkpoint = True
+    for block in slat_flow_model.blocks:
+        block.use_checkpoint = True
     image_cond_model = pipeline.models["image_cond_model"]
     slat_sampler = pipeline.slat_sampler
     slat_normalization = pipeline.slat_normalization
