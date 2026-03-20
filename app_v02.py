@@ -1,5 +1,4 @@
 import gradio as gr
-from gradio_litmodel3d import LitModel3D
 
 import os
 import shutil
@@ -690,15 +689,15 @@ def split_image(image: Image.Image) -> List[Image.Image]:
 # Create interface
 demo = gr.Blocks(
     title="ReconViaGen",
-    css="""
+)
+with demo:
+    gr.HTML("""<style>
         .slider .inner { width: 5px; background: #FFF; }
         .viewport { aspect-ratio: 4/3; }
         .tabs button.selected { font-size: 20px !important; color: crimson !important; }
         h1, h2, h3 { text-align: center; display: block; }
         .md_feedback li { margin-bottom: 0px !important; }
-    """
-)
-with demo:
+    </style>""")
     gr.Markdown("""
     # 💻 ReconViaGen
     <p align="center">

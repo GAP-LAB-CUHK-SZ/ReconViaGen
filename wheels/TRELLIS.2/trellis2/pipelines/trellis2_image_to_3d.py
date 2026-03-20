@@ -538,6 +538,7 @@ class Trellis2ImageTo3DPipeline(Pipeline):
         if strategy in ('average_right', 'weighted_average', 'adaptive_guidance_weight', 'fixed_guidance_rescale'):
             guidance_strength = all_params.get('guidance_strength', 3.0)
             guidance_rescale  = all_params.get('guidance_rescale', 0.0)
+            guidance_interval = all_params.get('guidance_interval', (0.0, 1.0))
             neg_cond          = conds[0]['neg_cond']
             # 去掉 CFG 专属参数，剩余部分透传给原始模型
             raw_kw = {k: v for k, v in all_params.items() if k not in _CFG_KEYS}
@@ -661,6 +662,7 @@ class Trellis2ImageTo3DPipeline(Pipeline):
                     #           = Σ_i v_i_rescaled - (N-1) * v_neg
                     #
                     # 当 guidance_rescale=0 或各视角完全一致时，退化为 'average_right'。
+                    guidance_strength = all_params.get('guidance_strength', 3.0) if guidance_interval[0] <= t <= guidance_interval[1] else 1.0
                     if guidance_strength == 0:
                         v_final = v_neg
                     else:
@@ -709,6 +711,7 @@ class Trellis2ImageTo3DPipeline(Pipeline):
 
                 # 对平均后的条件 velocity 统一应用一次 CFG（fixed_guidance_rescale 已直接设置 v_final，跳过）
                 if v_final is None:
+                    guidance_strength = all_params.get('guidance_strength', 3.0) if guidance_interval[0] <= t <= guidance_interval[1] else 1.0
                     if guidance_strength == 1:
                         v_final = v_pos_avg
                     elif guidance_strength == 0:
