@@ -4,3 +4,5 @@ __pycache__/
 weights/
 tmp/
 .gradio/
+lightning_logs/
+checkpoints/
