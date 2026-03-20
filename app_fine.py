@@ -366,8 +366,12 @@ def generate_and_extract_glb(
     seed: int,
     ss_guidance_strength: float,
     ss_sampling_steps: int,
+    ss_guidance_rescale: float,
+    ss_rescale_t: float,
     slat_guidance_strength: float,
     slat_sampling_steps: int,
+    slat_guidance_rescale: float,
+    slat_rescale_t: float,
     multiimage_algo: Literal["multidiffusion", "stochastic"],
     mesh_simplify: float,
     texture_size: int,
@@ -414,10 +418,16 @@ def generate_and_extract_glb(
         sparse_structure_sampler_params={
             "steps": ss_sampling_steps,
             "cfg_strength": ss_guidance_strength,
+            "cfg_interval": [0.6, 1.0],
+            "guidance_rescale": ss_guidance_rescale,
+            "rescale_t": ss_rescale_t,
         },
         slat_sampler_params={
             "steps": slat_sampling_steps,
             "cfg_strength": slat_guidance_strength,
+            "cfg_interval": [0.6, 1.0],
+            "guidance_rescale": slat_guidance_rescale,
+            "rescale_t": slat_rescale_t,
         },
         mode=multiimage_algo,
     )
@@ -588,10 +598,16 @@ def generate_and_extract_glb(
                 sparse_structure_sampler_params={
                     "steps": ss_sampling_steps,
                     "cfg_strength": ss_guidance_strength,
+                    "cfg_interval": [0.6, 1.0],
+                    "guidance_rescale": ss_guidance_rescale,
+                    "rescale_t": ss_rescale_t,
                 },
                 slat_sampler_params={
                     "steps": slat_sampling_steps,
                     "cfg_strength": slat_guidance_strength,
+                    "cfg_interval": [0.6, 1.0],
+                    "guidance_rescale": slat_guidance_rescale,
+                    "rescale_t": slat_rescale_t,
                 },
                 mode=multiimage_algo,
             )
@@ -734,10 +750,14 @@ with demo:
                 with gr.Row():
                     ss_guidance_strength = gr.Slider(0.0, 10.0, label="Guidance Strength", value=7.5, step=0.1)
                     ss_sampling_steps = gr.Slider(1, 50, label="Sampling Steps", value=30, step=1)
+                    ss_guidance_rescale = gr.Slider(0.0, 1.0, label="Guidance Rescale", value=0.7, step=0.01)
+                    ss_rescale_t = gr.Slider(1.0, 6.0, label="Rescale T", value=5.0, step=0.1)
                 gr.Markdown("Stage 2: Structured Latent Generation")
                 with gr.Row():
-                    slat_guidance_strength = gr.Slider(0.0, 10.0, label="Guidance Strength", value=3.0, step=0.1)
+                    slat_guidance_strength = gr.Slider(0.0, 10.0, label="Guidance Strength", value=7.5, step=0.1)
                     slat_sampling_steps = gr.Slider(1, 50, label="Sampling Steps", value=12, step=1)
+                    slat_guidance_rescale = gr.Slider(0.0, 1.0, label="Guidance Rescale", value=0.5, step=0.01)
+                    slat_rescale_t = gr.Slider(1.0, 6.0, label="Rescale T", value=3.0, step=0.1)
                 multiimage_algo = gr.Radio(["stochastic", "multidiffusion"], label="Multi-image Algorithm", value="multidiffusion")
                 refine = gr.Radio(["Yes", "No"], label="Refinement of Not", value="Yes")
                 ss_refine = gr.Radio(["noise", "deltav", "No"], label="Sparse Structure refinement of not", value="No")
@@ -803,11 +823,10 @@ with demo:
         outputs=[seed],
     ).then(
         generate_and_extract_glb,
-        inputs=[multiimage_prompt, seed, ss_guidance_strength, ss_sampling_steps, 
-                slat_guidance_strength, slat_sampling_steps, multiimage_algo, 
-                mesh_simplify, texture_size, refine, ss_refine, registration_num_frames,
-                trellis_stage1_lr, trellis_stage1_start_t, trellis_stage2_lr, 
-                trellis_stage2_start_t],
+        inputs=[multiimage_prompt, seed, ss_guidance_strength, ss_sampling_steps, ss_guidance_rescale, ss_rescale_t,
+                slat_guidance_strength, slat_sampling_steps, slat_guidance_rescale, slat_rescale_t, multiimage_algo, 
+                mesh_simplify, texture_size, refine, ss_refine, registration_num_frames, trellis_stage1_lr, 
+                trellis_stage1_start_t, trellis_stage2_lr, trellis_stage2_start_t],
         outputs=[output_buf, video_output, model_output, download_glb],
     ).then(
         lambda: (gr.update(interactive=True), gr.update(interactive=True)),
