@@ -1,0 +1,1 @@
+torchrun --nproc_per_node=8 train_slat.py --data_root /path_to_ProObjaverse-300K --weights microsoft/TRELLIS-image-large --save_dir checkpoints/slat-vggt-lora

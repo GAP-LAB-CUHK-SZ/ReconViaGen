@@ -1,15 +1,13 @@
 # Read Arguments
-TEMP=`getopt -o h --long help,new-env,basic,train,xformers,flash-attn,diffoctreerast,spconv,mipgaussian,kaolin,nvdiffrast,demo -n 'setup.sh' -- "$@"`
+TEMP=`getopt -o h --long help,new-env,basic,xformers,flash-attn,spconv,mipgaussian,kaolin,nvdiffrast,demo -n 'setup.sh' -- "$@"`
 
 eval set -- "$TEMP"
 
 HELP=false
 NEW_ENV=false
 BASIC=false
-TRAIN=false
 XFORMERS=false
 FLASHATTN=false
-DIFFOCTREERAST=false
 LINEAR_ASSIGNMENT=false
 SPCONV=false
 ERROR=false
@@ -27,10 +25,8 @@ while true ; do
         -h|--help) HELP=true ; shift ;;
         --new-env) NEW_ENV=true ; shift ;;
         --basic) BASIC=true ; shift ;;
-        --train) TRAIN=true ; shift ;;
         --xformers) XFORMERS=true ; shift ;;
         --flash-attn) FLASHATTN=true ; shift ;;
-        --diffoctreerast) DIFFOCTREERAST=true ; shift ;;
         --spconv) SPCONV=true ; shift ;;
         --mipgaussian) MIPGAUSSIAN=true ; shift ;;
         --kaolin) KAOLIN=true ; shift ;;
@@ -52,10 +48,8 @@ if [ "$HELP" = true ] ; then
     echo "  -h, --help              Display this help message"
     echo "  --new-env               Create a new conda environment"
     echo "  --basic                 Install basic dependencies"
-    echo "  --train                 Install training dependencies"
     echo "  --xformers              Install xformers"
     echo "  --flash-attn            Install flash-attn"
-    echo "  --diffoctreerast        Install diffoctreerast"
     echo "  --spconv                Install spconv"
     echo "  --mipgaussian           Install mip-splatting"
     echo "  --kaolin                Install kaolin"
@@ -65,9 +59,9 @@ if [ "$HELP" = true ] ; then
 fi
 
 if [ "$NEW_ENV" = true ] ; then
-    conda create -n trellis python=3.10
-    conda activate trellis
-    conda install pytorch==2.4.0 torchvision==0.19.0 pytorch-cuda=11.8 -c pytorch -c nvidia
+    conda create -n reconviagen python=3.10
+    conda activate reconviagen
+    conda install pytorch==2.4.0 torchvision==0.19.0 pytorch-cuda=12.1 -c pytorch -c nvidia
 fi
 
 # Get system information
@@ -106,13 +100,6 @@ esac
 if [ "$BASIC" = true ] ; then
     pip install pillow imageio imageio-ffmpeg tqdm easydict opencv-python-headless scipy ninja rembg onnxruntime trimesh open3d xatlas pyvista pymeshfix igraph lpips dreamsim kornia==0.8.2 huggingface_hub==0.33.4 transformers==4.46.3
     pip install git+https://github.com/EasternJournalist/utils3d.git@9a4eb15e4021b67b12c460c7057d642626897ec8
-fi
-
-if [ "$TRAIN" = true ] ; then
-    pip install tensorboard pandas lpips
-    pip uninstall -y pillow
-    sudo apt install -y libjpeg-dev
-    pip install pillow-simd
 fi
 
 if [ "$XFORMERS" = true ] ; then
@@ -204,16 +191,6 @@ if [ "$NVDIFFRAST" = true ] ; then
         pip install https://huggingface.co/spaces/JeffreyXiang/TRELLIS/resolve/main/wheels/nvdiffrast-0.3.3-cp310-cp310-linux_x86_64.whl\?download\=true
     else
         echo "[NVDIFFRAST] Unsupported platform: $PLATFORM"
-    fi
-fi
-
-if [ "$DIFFOCTREERAST" = true ] ; then
-    if [ "$PLATFORM" = "cuda" ] ; then
-        mkdir -p /tmp/extensions
-        git clone --recurse-submodules https://github.com/JeffreyXiang/diffoctreerast.git /tmp/extensions/diffoctreerast
-        pip install /tmp/extensions/diffoctreerast
-    else
-        echo "[DIFFOCTREERAST] Unsupported platform: $PLATFORM"
     fi
 fi
 
