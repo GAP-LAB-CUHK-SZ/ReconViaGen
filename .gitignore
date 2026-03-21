@@ -6,3 +6,4 @@ tmp/
 .gradio/
 lightning_logs/
 checkpoints/
+core

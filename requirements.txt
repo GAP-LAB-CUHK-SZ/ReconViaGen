@@ -23,7 +23,6 @@ xformers==0.0.27.post2
 spconv-cu120==2.3.6
 transformers==4.46.3
 gradio_litmodel3d==0.0.1
-pydantic==2.10.6
 einops==0.8.1
 huggingface_hub==0.33.4
 lpips==0.1.4
@@ -31,7 +30,6 @@ spaces==0.37.1
 gradio==4.44.1
 gradio_litmodel3d==0.0.1
 dreamsim==0.2.1
-lpips==0.1.4
 kornia==0.8.2
 pydantic==2.10.6
 https://github.com/Dao-AILab/flash-attention/releases/download/v2.7.0.post2/flash_attn-2.7.0.post2+cu12torch2.4cxx11abiFALSE-cp310-cp310-linux_x86_64.whl

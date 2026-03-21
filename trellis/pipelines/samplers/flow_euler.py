@@ -52,7 +52,7 @@ class FlowEulerSampler(Sampler):
 
     def _pred_to_xstart(self, x_t, t, pred):
         return (1 - self.sigma_min) * x_t - (self.sigma_min + (1 - self.sigma_min) * t) * pred
-
+    
     def _xstart_to_pred(self, x_t, t, x_0):
         return ((1 - self.sigma_min) * x_t - x_0) / (self.sigma_min + (1 - self.sigma_min) * t)
 
@@ -725,13 +725,13 @@ class FlowEulerCfgSampler(ClassifierFreeGuidanceSamplerMixin, FlowEulerSampler):
         neg_cond,
         steps: int = 50,
         rescale_t: float = 1.0,
-        guidance_strength: float = 3.0,
+        cfg_strength: float = 3.0,
         verbose: bool = True,
         **kwargs
     ):
         """
         Generate samples from the model using Euler method.
-
+        
         Args:
             model: The model to sample from.
             noise: The initial noise tensor.
@@ -739,7 +739,7 @@ class FlowEulerCfgSampler(ClassifierFreeGuidanceSamplerMixin, FlowEulerSampler):
             neg_cond: negative conditional information.
             steps: The number of steps to sample.
             rescale_t: The rescale factor for t.
-            guidance_strength: The strength of classifier-free guidance.
+            cfg_strength: The strength of classifier-free guidance.
             verbose: If True, show a progress bar.
             **kwargs: Additional arguments for model_inference.
 
@@ -749,7 +749,7 @@ class FlowEulerCfgSampler(ClassifierFreeGuidanceSamplerMixin, FlowEulerSampler):
             - 'pred_x_t': a list of prediction of x_t.
             - 'pred_x_0': a list of prediction of x_0.
         """
-        return super().sample(model, noise, cond, steps, rescale_t, verbose, neg_cond=neg_cond, guidance_strength=guidance_strength, **kwargs)
+        return super().sample(model, noise, cond, steps, rescale_t, verbose, neg_cond=neg_cond, cfg_strength=cfg_strength, **kwargs)
 
 
 class FlowEulerGuidanceIntervalSampler(GuidanceIntervalSamplerMixin, ClassifierFreeGuidanceSamplerMixin, FlowEulerSampler):
@@ -765,14 +765,14 @@ class FlowEulerGuidanceIntervalSampler(GuidanceIntervalSamplerMixin, ClassifierF
         neg_cond,
         steps: int = 50,
         rescale_t: float = 1.0,
-        guidance_strength: float = 3.0,
-        guidance_rescale: float = 0.0,
+        cfg_strength: float = 3.0,
+        cfg_interval: Tuple[float, float] = (0.0, 1.0),
         verbose: bool = True,
         **kwargs
     ):
         """
         Generate samples from the model using Euler method.
-
+        
         Args:
             model: The model to sample from.
             noise: The initial noise tensor.
@@ -780,8 +780,8 @@ class FlowEulerGuidanceIntervalSampler(GuidanceIntervalSamplerMixin, ClassifierF
             neg_cond: negative conditional information.
             steps: The number of steps to sample.
             rescale_t: The rescale factor for t.
-            guidance_strength: The strength of classifier-free guidance.
-            guidance_rescale: Rescale factor for guidance (0 = disabled).
+            cfg_strength: The strength of classifier-free guidance.
+            cfg_interval: The interval for classifier-free guidance.
             verbose: If True, show a progress bar.
             **kwargs: Additional arguments for model_inference.
 
@@ -791,7 +791,7 @@ class FlowEulerGuidanceIntervalSampler(GuidanceIntervalSamplerMixin, ClassifierF
             - 'pred_x_t': a list of prediction of x_t.
             - 'pred_x_0': a list of prediction of x_0.
         """
-        return super().sample(model, noise, cond, steps, rescale_t, verbose, neg_cond=neg_cond, guidance_strength=guidance_strength, guidance_rescale=guidance_rescale, **kwargs)
+        return super().sample(model, noise, cond, steps, rescale_t, verbose, neg_cond=neg_cond, cfg_strength=cfg_strength, cfg_interval=cfg_interval, **kwargs)
 
     def sample_opt(
         self,
@@ -801,14 +801,14 @@ class FlowEulerGuidanceIntervalSampler(GuidanceIntervalSamplerMixin, ClassifierF
         neg_cond,
         steps: int = 50,
         rescale_t: float = 1.0,
-        guidance_strength: float = 3.0,
-        guidance_rescale: float = 0.0,
+        cfg_strength: float = 3.0,
+        cfg_interval: Tuple[float, float] = (0.0, 1.0),
         verbose: bool = True,
         **kwargs
     ):
         """
         Generate samples from the model using Euler method.
-
+        
         Args:
             model: The model to sample from.
             noise: The initial noise tensor.
@@ -816,8 +816,8 @@ class FlowEulerGuidanceIntervalSampler(GuidanceIntervalSamplerMixin, ClassifierF
             neg_cond: negative conditional information.
             steps: The number of steps to sample.
             rescale_t: The rescale factor for t.
-            guidance_strength: The strength of classifier-free guidance.
-            guidance_rescale: Rescale factor for guidance (0 = disabled).
+            cfg_strength: The strength of classifier-free guidance.
+            cfg_interval: The interval for classifier-free guidance.
             verbose: If True, show a progress bar.
             **kwargs: Additional arguments for model_inference.
 
@@ -827,7 +827,7 @@ class FlowEulerGuidanceIntervalSampler(GuidanceIntervalSamplerMixin, ClassifierF
             - 'pred_x_t': a list of prediction of x_t.
             - 'pred_x_0': a list of prediction of x_0.
         """
-        return super().sample_opt(model, noise, cond, steps, rescale_t, verbose, neg_cond=neg_cond, guidance_strength=guidance_strength, guidance_rescale=guidance_rescale, **kwargs)
+        return super().sample_opt(model, noise, cond, steps, rescale_t, verbose, neg_cond=neg_cond, cfg_strength=cfg_strength, cfg_interval=cfg_interval, **kwargs)
 
     def sample_ss_opt_delta_v(
         self,
@@ -841,14 +841,14 @@ class FlowEulerGuidanceIntervalSampler(GuidanceIntervalSamplerMixin, ClassifierF
         neg_cond,
         steps: int = 50,
         rescale_t: float = 1.0,
-        guidance_strength: float = 3.0,
-        guidance_rescale: float = 0.0,
+        cfg_strength: float = 3.0,
+        cfg_interval: Tuple[float, float] = (0.0, 1.0),
         verbose: bool = True,
         **kwargs
     ):
         """
         Generate samples from the model using Euler method.
-
+        
         Args:
             model: The model to sample from.
             noise: The initial noise tensor.
@@ -856,8 +856,8 @@ class FlowEulerGuidanceIntervalSampler(GuidanceIntervalSamplerMixin, ClassifierF
             neg_cond: negative conditional information.
             steps: The number of steps to sample.
             rescale_t: The rescale factor for t.
-            guidance_strength: The strength of classifier-free guidance.
-            guidance_rescale: Rescale factor for guidance (0 = disabled).
+            cfg_strength: The strength of classifier-free guidance.
+            cfg_interval: The interval for classifier-free guidance.
             verbose: If True, show a progress bar.
             **kwargs: Additional arguments for model_inference.
 
@@ -867,7 +867,7 @@ class FlowEulerGuidanceIntervalSampler(GuidanceIntervalSamplerMixin, ClassifierF
             - 'pred_x_t': a list of prediction of x_t.
             - 'pred_x_0': a list of prediction of x_0.
         """
-        return super().sample_ss_opt_delta_v(model, ss_decoder, ss_learning_rate, ss_start_t, ss, noise, cond, steps, rescale_t, verbose, neg_cond=neg_cond, guidance_strength=guidance_strength, guidance_rescale=guidance_rescale, **kwargs)
+        return super().sample_ss_opt_delta_v(model, ss_decoder, ss_learning_rate, ss_start_t, ss, noise, cond, steps, rescale_t, verbose, neg_cond=neg_cond, cfg_strength=cfg_strength, cfg_interval=cfg_interval, **kwargs)
 
 
     def sample_slat_opt_delta_v(
@@ -888,14 +888,14 @@ class FlowEulerGuidanceIntervalSampler(GuidanceIntervalSamplerMixin, ClassifierF
         neg_cond,
         steps: int = 50,
         rescale_t: float = 1.0,
-        guidance_strength: float = 3.0,
-        guidance_rescale: float = 0.0,
+        cfg_strength: float = 3.0,
+        cfg_interval: Tuple[float, float] = (0.0, 1.0),
         verbose: bool = True,
         **kwargs
     ):
         """
         Generate samples from the model using Euler method.
-
+        
         Args:
             model: The model to sample from.
             noise: The initial noise tensor.
@@ -903,8 +903,8 @@ class FlowEulerGuidanceIntervalSampler(GuidanceIntervalSamplerMixin, ClassifierF
             neg_cond: negative conditional information.
             steps: The number of steps to sample.
             rescale_t: The rescale factor for t.
-            guidance_strength: The strength of classifier-free guidance.
-            guidance_rescale: Rescale factor for guidance (0 = disabled).
+            cfg_strength: The strength of classifier-free guidance.
+            cfg_interval: The interval for classifier-free guidance.
             verbose: If True, show a progress bar.
             **kwargs: Additional arguments for model_inference.
 
@@ -914,7 +914,7 @@ class FlowEulerGuidanceIntervalSampler(GuidanceIntervalSamplerMixin, ClassifierF
             - 'pred_x_t': a list of prediction of x_t.
             - 'pred_x_0': a list of prediction of x_0.
         """
-        return super().sample_slat_opt_delta_v(model, slat_decoder_gs, slat_decoder_mesh, std, mean, dreamsim_model, apperance_learning_rate, start_t, input_images, extrinsics, intrinsics, noise, cond, steps, rescale_t, verbose, neg_cond=neg_cond, guidance_strength=guidance_strength, guidance_rescale=guidance_rescale, **kwargs)
+        return super().sample_slat_opt_delta_v(model, slat_decoder_gs, slat_decoder_mesh, std, mean, dreamsim_model, apperance_learning_rate, start_t, input_images, extrinsics, intrinsics,noise, cond, steps, rescale_t, verbose, neg_cond=neg_cond, cfg_strength=cfg_strength, cfg_interval=cfg_interval, **kwargs)
 
 
 class LatentMatchGuidanceIntervalSampler(GuidanceIntervalSamplerMixin, LatentMatchSampler):

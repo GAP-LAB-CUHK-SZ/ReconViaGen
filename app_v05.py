@@ -36,6 +36,7 @@ import torch
 import numpy as np
 import imageio
 from PIL import Image
+import gc
 
 from trellis2.modules.sparse import SparseTensor
 from trellis2.utils import render_utils
@@ -252,7 +253,8 @@ def image_to_3d(
 
     ss_params = {
         "steps":             ss_sampling_steps,
-        "guidance_strength": ss_guidance_strength,
+        "cfg_strength":      ss_guidance_strength,
+        "cfg_interval":      [0.6, 1.0],
         "guidance_rescale":  ss_guidance_rescale,
         "rescale_t":         ss_rescale_t,
     }
@@ -559,11 +561,21 @@ if __name__ == "__main__":
     vggt_pipeline.cuda()
     vggt_pipeline.VGGT_model.cuda()
     vggt_pipeline.birefnet_model.cuda()
+    del vggt_pipeline.slat_flow_model
+    del vggt_pipeline.models['slat_flow_model']
+    del vggt_pipeline.slat_vggt_cond
+    del vggt_pipeline.models['slat_vggt_cond']
+    del vggt_pipeline.models['slat_decoder_gs']
+    del vggt_pipeline.models['slat_decoder_mesh']
 
     # Load TRELLIS.2 pipeline (shape/tex slat + decode)
     print("[2/2] Loading TRELLIS.2 pipeline (shape/tex slat) …")
     trellis2_pipeline = Trellis2ImageTo3DPipeline.from_pretrained("microsoft/TRELLIS.2-4B")
     trellis2_pipeline.cuda()
+    del trellis2_pipeline.models['sparse_structure_decoder']
+    del trellis2_pipeline.models['sparse_structure_flow_model']
+    gc.collect()
+    torch.cuda.empty_cache()
 
     # Combine into hybrid pipeline
     pipeline = TrellisHybridPipeline(vggt_pipeline, trellis2_pipeline)
