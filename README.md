@@ -87,6 +87,7 @@ Run the following code to train the flow model of SS Stage on the ProObjaverse-3
 ```sh
 . ./train_ss.sh
 ```
+Noted that we trained the model with 8 A100 GPUs (80GB).
 
 ### 2. Training DiT of SLat Stage.
 
@@ -94,6 +95,7 @@ Run the following code to train the flow model of SLat Stage on the ProObjaverse
 ```sh
 . ./train_slat.sh
 ```
+Noted that we trained the model with 8 A100 GPUs (80GB).
 
 ### 3. Try the checkpoint with gradio:
 
