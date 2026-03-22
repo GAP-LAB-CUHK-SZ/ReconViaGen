@@ -24,7 +24,14 @@ We welcome feedback on failure cases to help improve the model.
 **News**: Releasing the inference code of ReconViaGen-v0.5! Thanks for the excellent work [TRELLIS.2](https://github.com/microsoft/TRELLIS.2)! We have proposed an effective multi-view fusion strategy for TRELLIS.2, and then we combine ReconViaGen with TRELLIS.2 to enable the generation of high-resolution meshes and PBR materials.
 For details, please refer to the [v0.5 branch](https://github.com/GAP-LAB-CUHK-SZ/ReconViaGen/tree/v0.5?tab=readme-ov-file) of this repository.
 
-<video src="assets/ReconViaGen_v05.mp4" controls autoplay loop muted width="100%"></video>
+<div align="center">
+
+<video src="https://github.com/user-attachments/assets/e04a3f51-90d1-4a1a-915c-94747d71718d" controls autoplay loop muted width="100%"></video>
+
+*Demo of ReconViaGen-v0.5*
+
+</div>
+
 
 
 **News**: Releasing the training and inference code of ReconViaGen-v0.2. We have optimized the inference process. Reconstructing 16 images using ReconViaGen without refinement (app.py) consumes less than 18GB of VRAM.
@@ -37,11 +44,11 @@ Reconstructing 16 images using ReconViaGen (app_fine.py) consumes less than 24GB
 ## Installation
 Clone the repo:
 ```sh
-git clone --recursive https://github.com/GAP-LAB-CUHK-SZ/ReconViaGen.git
+git clone --recursive -b v0.5 https://github.com/GAP-LAB-CUHK-SZ/ReconViaGen.git
 cd ReconViaGen
 ```
 
-Create a new conda environment named reconviagen and install the dependencies (pytorch 2.4.0 with CUDA 12.1):
+You can choose to create a new conda environment named reconviagen and install the dependencies (pytorch 2.4.0 with CUDA 12.1):
 ```sh
 . ./setup.sh --new-env --basic --xformers --flash-attn --spconv --mipgaussian --kaolin --nvdiffrast --demo
 ```
