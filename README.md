@@ -44,7 +44,7 @@ Reconstructing 16 images using ReconViaGen (app_fine.py) consumes less than 24GB
 ## Installation
 Clone the repo:
 ```sh
-git clone --recursive -b v0.5 https://github.com/GAP-LAB-CUHK-SZ/ReconViaGen.git
+git clone --recursive https://github.com/GAP-LAB-CUHK-SZ/ReconViaGen.git
 cd ReconViaGen
 ```
 
