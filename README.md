@@ -9,19 +9,20 @@
 
 <div align="center">
 
+[![Website](https://raw.githubusercontent.com/prs-eth/Marigold/main/doc/badges/badge-website.svg)](https://jiahao620.github.io/reconviagen)
+[![Paper](https://img.shields.io/badge/arXiv-PDF-b31b1b)](https://arxiv.org/abs/2510.23306)
+[![Hugging Face Space](https://img.shields.io/badge/🤗%20Hugging%20Face%20-Space-yellow)](https://huggingface.co/spaces/Stable-X/ReconViaGen)
 
-[![Website](https://raw.githubusercontent.com/prs-eth/Marigold/main/doc/badges/badge-website.svg)](https://jiahao620.github.io/reconviagen) 
-[![Paper](https://img.shields.io/badge/arXiv-PDF-b31b1b)](https://arxiv.org/abs/2510.23306) 
-[![Hugging Face Space](https://img.shields.io/badge/🤗%20Hugging%20Face%20-Space-yellow)](https://huggingface.co/spaces/Stable-X/ReconViaGen) 
-
- </div>
+</div>
 
 ![teaser](assets/Teaser.png)
 
 **Alpha Demo**: https://huggingface.co/spaces/Stable-X/ReconViaGen.
 We welcome feedback on failure cases to help improve the model.
 
-**News**: Releasing the inference code of ReconViaGen-v0.5! Thanks for the excellent work [TRELLIS.2](https://github.com/microsoft/TRELLIS.2)! We have proposed an effective multi-view fusion strategy for TRELLIS.2, and then we combine ReconViaGen with TRELLIS.2 to enable the generation of high-resolution meshes and PBR materials.
+---
+
+**🆕 News (v0.5)** — Releasing the inference code of ReconViaGen-v0.5 in the [v0.5 branch](https://github.com/GAP-LAB-CUHK-SZ/ReconViaGen/tree/v0.5?tab=readme-ov-file) of this repository! Thanks for the excellent work [TRELLIS.2](https://github.com/microsoft/TRELLIS.2)! We have proposed an effective multi-view fusion strategy for TRELLIS.2, and then we combine ReconViaGen with TRELLIS.2 to enable the generation of high-resolution meshes and PBR materials.
 For details, please refer to the [v0.5 branch](https://github.com/GAP-LAB-CUHK-SZ/ReconViaGen/tree/v0.5?tab=readme-ov-file) of this repository.
 
 <div align="center">
@@ -32,92 +33,76 @@ For details, please refer to the [v0.5 branch](https://github.com/GAP-LAB-CUHK-S
 
 </div>
 
-
-
-**News**: Releasing the training and inference code of ReconViaGen-v0.2. We have optimized the inference process. Reconstructing 16 images using ReconViaGen without refinement (app.py) consumes less than 18GB of VRAM.
+**News (v0.2)** — Releasing the training and inference code of ReconViaGen-v0.2 in the [main branch](https://github.com/GAP-LAB-CUHK-SZ/ReconViaGen) of this repository! We have optimized the inference process. Reconstructing 16 images using ReconViaGen without refinement (app.py) consumes less than 18GB of VRAM.
 Reconstructing 16 images using ReconViaGen (app_fine.py) consumes less than 24GB of VRAM.
 
+**News (Community)** — An [unofficial implementation of ReconViaGen](https://github.com/estheryang11/ReconViaGen) is released! Thanks to [estheryang11](https://github.com/estheryang11) a lot!
 
-**News**: An [unofficial implementation of ReconViaGen](https://github.com/estheryang11/ReconViaGen) is released! Thanks to [estheryang11](https://github.com/estheryang11) a lot!
-
+---
 
 ## Installation
+
 Clone the repo:
 ```sh
 git clone --recursive -b v0.5 https://github.com/GAP-LAB-CUHK-SZ/ReconViaGen.git
 cd ReconViaGen
 ```
 
-You can choose to create a new conda environment named reconviagen and install the dependencies (pytorch 2.4.0 with CUDA 12.1):
+You can choose to create a new conda environment named `reconviagen_v05` and install the dependencies (PyTorch 2.4.0 with CUDA 12.1):
 ```sh
-. ./setup.sh --new-env --basic --xformers --flash-attn --spconv --mipgaussian --kaolin --nvdiffrast --demo
+. ./setup.sh --new-env --basic --xformers --flash-attn --cumesh --o-voxel --flexgemm --nvdiffrec --spconv --mipgaussian --kaolin --nvdiffrast --demo
 ```
+
+Or you can update a previous conda environment `reconviagen`:
+```sh
+. ./setup_update.sh
+```
+
+---
 
 ## Local Demo 🤗
-Run the script to reconstruct the object without refinement by:
+
+Run the script to reconstruct the object:
 ```sh
-python app.py
+python app_v05.py
 ```
 
-Run the script to reconstruct the object with refinement by:
-```sh
-python app_fine.py
-```
+---
 
-## Training
+## Method Overview
 
-### 0. Data Preparation
-The processed dataset can be download [here](https://huggingface.co/datasets/Stable-X/ProObjaverse-300K/tree/main). The dataset is organized as follows:
+ReconViaGen-v0.5 adopts a four-stage hybrid pipeline, combining ReconViaGen's multi-view-aware sparse structure estimation with TRELLIS.2's high-resolution generation:
 
-```
-ProObjaverse-300K/
-├── renders_random_env/
-│   ├── shard-0000/
-│   │   ├── {uid}.tar          # per-object archive
-│   │   │   ├── {uid}/000.json          # camera metadata (extrinsic 4×4, intrinsic 3×3)
-│   │   │   ├── {uid}/000.rgba.webp     # RGBA render, 1024×1024
-│   │   │   ├── {uid}/001.json
-│   │   │   ├── {uid}/001.rgba.webp
-│   │   │   └── ...                     # up to ~80 views per object
-│   │   └── ...
-│   ├── shard-0001/
-│   └── ...
-└── lh-slats/
-    ├── shard-0000/
-    │   ├── {uid}.npz          # structured latent for the object
-    │   │   ├── feats:  float32 (N, 8)       # latent features per voxel
-    │   │   └── coords: uint8   (N, 3)        # voxel coordinates in [0, 63]
-    │   └── ...
-    ├── shard-0001/
-    └── ...
-```
+**Stage 1 · ReconViaGen**
+- Input: one or more RGBA images (video frame extraction is also supported)
+- VGGT-based multi-view feature extractor generates sparse structure coordinates
+- Output: sparse voxel coordinates at 32³ resolution
 
-Each `.tar` contains all rendered views for one object. The `uid` is shared between the render tar and the slat npz, and is used to pair them at training time. The `.json` camera file contains all camera pose of rendered views.
+**Stage 2 · Shape SLat (TRELLIS.2)**
+- Conditioned on the Stage 1 sparse coordinates, a Shape SLat Flow Matching model generates the Shape Sparse Latent
+- Output: sparse latent encoding high-quality geometry
+- Multi-image fusion strategies: `adaptive_guidance_weight` (default), `weighted_average`, `sequential`, etc.
 
-### 1. Training DiT of SS Stage.
+**Stage 3 · Texture SLat (TRELLIS.2)**
+- Conditioned on the Shape SLat from Stage 2, generates a Texture Sparse Latent with PBR material attributes (Base Color, Metallic, Roughness)
+- Multi-image fusion strategies: `adaptive_guidance_weight` (default), `weighted_average`, `sequential`, etc.
 
-Run the following code to train the flow model of SS Stage on the ProObjaverse-300K dataset:
-```sh
-. ./train_ss.sh
-```
-Noted that we trained the model with 8 A100 GPUs (80GB).
+---
 
-### 2. Training DiT of SLat Stage.
+## Multi-view Fusion Strategies
 
-Run the following code to train the flow model of SLat Stage on the ProObjaverse-300K dataset:
-```sh
-. ./train_slat.sh
-```
-Noted that we trained the model with 8 A100 GPUs (80GB).
+We explore six strategies, which are available via the `strategy` parameter. Empirically, **the `adaptive_guidance_weight` is the best choice.**
 
-### 3. Try the checkpoint with gradio:
+| Strategy | Passes / Step | Description |
+| :--- | :---: | :--- |
+| **`sequential`** | 2 | At denoising step *i*, uses `images[i % N]` as the sole condition — the cheapest option. Each step sees only one view, so multi-view coherence relies on the cyclic ordering of images across steps. |
+| **`average`** | 2N | Runs full CFG independently for every image (1 uncond + 1 cond call **per view**), then averages the `pred_x_prev` tensors. Because CFG and its rescale are applied separately per image, a slight bias is introduced when `guidance_rescale > 0`. |
+| **`average_right`** | N+1 | Correct Product-of-Experts (PoE) multi-image CFG. One shared uncond call + N cond calls; conditional velocities are **equally averaged**, then CFG (including rescale) is applied **once** on the blended result — eliminating the per-image rescale bias of `average` while halving the forward-pass cost. |
+| **`weighted_average`** | N+1 | Same architecture as `average_right` (1 uncond + N cond, CFG once). At each denoising step, **per latent token**, the weight of view *i* is `softmax(−‖v_cond_i − mean_v‖)` where `mean_v` is the cross-view mean velocity. Views whose velocity deviates the least from the consensus receive higher weight, locally suppressing occluded or specular views without penalising them globally. |
+| **`adaptive_guidance_weight`** | N+1 | Same architecture as `average_right`. Per-token weight = **guidance magnitude** `‖v_cond_i − v_uncond‖` — a direct proxy for how strongly the model "sees" the corresponding surface region under view *i* (occluded/specular regions produce small guidance signals and are naturally down-weighted). A t-adaptive temperature is used: early steps (t≈1) → near-uniform weights for stable global structure; late steps (t≈0) → sharpened weights so the most confident views drive fine-detail refinement. |
+| **`fixed_guidance_rescale`** | N+1 | Theoretically correct PoE with **per-view independent rescale**. `average_right` computes the rescale reference from the *averaged* velocity, which under-estimates variance when views disagree. This strategy instead applies CFG at strength `gs/N` and rescale *independently* for each view (using each view's own `std(x0_cond_i)` as the reference), then combines via PoE: `v_final = Σᵢ v_i_rescaled − (N−1)·v_uncond`. Degrades exactly to `average_right` when `guidance_rescale=0` or all views agree. |
 
-Run the following code to try your trained checkpoints with gradio:
-
-```sh
-python app_try.py --ss_ckpt /path_to_your_trained_ss_ckpt --slat_ckpt /path_to_your_trained_slat_ckpt
-```
-
+---
 
 ## Citation
 
