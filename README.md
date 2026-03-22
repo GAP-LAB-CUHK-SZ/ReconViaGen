@@ -24,7 +24,12 @@ We welcome feedback on failure cases to help improve the model.
 **News**: Releasing the inference code of ReconViaGen-v0.5! Thanks for the excellent work [TRELLIS.2](https://github.com/microsoft/TRELLIS.2)! We have proposed an effective multi-view fusion strategy for TRELLIS.2, and then we combine ReconViaGen with TRELLIS.2 to enable the generation of high-resolution meshes and PBR materials.
 For details, please refer to the [v0.5 branch](https://github.com/GAP-LAB-CUHK-SZ/ReconViaGen/tree/v0.5?tab=readme-ov-file) of this repository.
 
-<video src="https://github.com/GAP-LAB-CUHK-SZ/ReconViaGen/tree/main/assets/ReconViaGen_v05.mp4" controls autoplay loop muted width="100%"></video>
+<div align="center">
+
+[![Demo Video](https://img.youtube.com/vi/_lP--a_TBsI/0.jpg)](https://www.youtube.com/watch?v=_lP--a_TBsI)
+
+</div>
+
 
 
 **News**: Releasing the training and inference code of ReconViaGen-v0.2. We have optimized the inference process. Reconstructing 16 images using ReconViaGen without refinement (app.py) consumes less than 18GB of VRAM.
