@@ -24,3 +24,5 @@ pip install gradio==6.0.1
 pip uninstall -y gradio-litmodel3d
 pip install huggingface_hub==0.36.2
 pip install "transformers>=4.57.1"
+pip install rtree
+pip install fast-simplification

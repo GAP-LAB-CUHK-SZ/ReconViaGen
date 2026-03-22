@@ -7,3 +7,4 @@ tmp/
 lightning_logs/
 checkpoints/
 core
+show_case/

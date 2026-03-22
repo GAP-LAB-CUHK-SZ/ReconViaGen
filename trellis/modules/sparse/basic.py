@@ -134,6 +134,37 @@ class SparseTensor:
         return len(self.shape)
     
     @property
+    def ndim(self) -> int:
+        return self.dim()
+
+    @property
+    def dtype(self):
+        return self.feats.dtype
+
+    @property
+    def device(self):
+        return self.feats.device
+
+    @property
+    def seqlen(self) -> torch.LongTensor:
+        seqlen = self.get_spatial_cache('seqlen')
+        if seqlen is None:
+            seqlen = torch.tensor([l.stop - l.start for l in self.layout], dtype=torch.long, device=self.device)
+            self.register_spatial_cache('seqlen', seqlen)
+        return seqlen
+
+    @property
+    def cum_seqlen(self) -> torch.LongTensor:
+        cum_seqlen = self.get_spatial_cache('cum_seqlen')
+        if cum_seqlen is None:
+            cum_seqlen = torch.cat([
+                torch.tensor([0], dtype=torch.long, device=self.device),
+                self.seqlen.cumsum(dim=0)
+            ], dim=0)
+            self.register_spatial_cache('cum_seqlen', cum_seqlen)
+        return cum_seqlen
+
+    @property
     def layout(self) -> List[slice]:
         return self._layout
 
@@ -366,6 +397,40 @@ class SparseTensor:
         coords = torch.cat(coords, dim=0).contiguous()
         feats = torch.cat(feats, dim=0).contiguous()
         return SparseTensor(feats=feats, coords=coords)
+
+    def reduce(self, op: str, dim: Optional[Union[int, Tuple[int,...]]] = None, keepdim: bool = False) -> torch.Tensor:
+        if isinstance(dim, int):
+            dim = (dim,)
+        
+        if op =='mean':
+            red = self.feats.mean(dim=dim, keepdim=keepdim)
+        elif op =='sum':
+            red = self.feats.sum(dim=dim, keepdim=keepdim)
+        elif op == 'prod':
+            red = self.feats.prod(dim=dim, keepdim=keepdim)
+        else:
+            raise ValueError(f"Unsupported reduce operation: {op}")
+        
+        if dim is None or 0 in dim:
+            return red
+        
+        red = torch.segment_reduce(red, reduce=op, lengths=self.seqlen)
+        return red
+
+    def mean(self, dim: Optional[Union[int, Tuple[int,...]]] = None, keepdim: bool = False) -> torch.Tensor:
+        return self.reduce(op='mean', dim=dim, keepdim=keepdim)
+        
+    def sum(self, dim: Optional[Union[int, Tuple[int,...]]] = None, keepdim: bool = False) -> torch.Tensor:
+        return self.reduce(op='sum', dim=dim, keepdim=keepdim)
+        
+    def prod(self, dim: Optional[Union[int, Tuple[int,...]]] = None, keepdim: bool = False) -> torch.Tensor:
+        return self.reduce(op='prod', dim=dim, keepdim=keepdim)
+    
+    def std(self, dim: Optional[Union[int, Tuple[int,...]]] = None, keepdim: bool = False) -> torch.Tensor:
+        mean = self.mean(dim=dim, keepdim=True)
+        mean2 = self.replace(self.feats ** 2).mean(dim=dim, keepdim=True)
+        std = (mean2 - mean ** 2).sqrt()
+        return std
 
     def register_spatial_cache(self, key, value) -> None:
         """

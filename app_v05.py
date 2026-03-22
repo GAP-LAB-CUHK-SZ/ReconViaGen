@@ -52,6 +52,7 @@ from trellis.pipelines.trellis_hybrid_pipeline import TrellisHybridPipeline
 MAX_SEED = np.iinfo(np.int32).max
 TMP_DIR  = os.path.join(_HERE, 'tmp')
 os.makedirs(TMP_DIR, exist_ok=True)
+LOW_VRAM = True
 
 MODES = [
     {"name": "Shaded",      "render_key": "shaded"},
@@ -401,7 +402,17 @@ def prepare_multi_example() -> List[Image.Image]:
     return images
 
 
-def split_image(image: Image.Image) -> List[Image.Image]:
+def split_image(image) -> List[Image.Image]:
+    if image is None:
+        return []
+    if isinstance(image, str):
+        image = Image.open(image)
+    elif isinstance(image, np.ndarray):
+        image = Image.fromarray(image)
+    if not isinstance(image, Image.Image):
+        return []
+    if image.mode != 'RGBA':
+        image = image.convert('RGBA')
     arr   = np.array(image)
     alpha = arr[..., 3]
     cols  = np.any(alpha > 0, axis=0)
@@ -510,7 +521,7 @@ with gr.Blocks(
 
     # Example row
     with gr.Row():
-        _dummy_img = gr.Image(visible=False)
+        _dummy_img = gr.Image(visible=False, type="pil", image_mode="RGBA")
         examples_multi = gr.Examples(
             examples=prepare_multi_example(),
             inputs=[_dummy_img],
@@ -568,17 +579,27 @@ if __name__ == "__main__":
     del vggt_pipeline.models['slat_decoder_gs']
     del vggt_pipeline.models['slat_decoder_mesh']
 
+    if LOW_VRAM:
+        # Start vggt models on CPU; _run_ss_stage moves them to GPU when needed.
+        vggt_pipeline.VGGT_model.cpu()
+        for model in vggt_pipeline.models.values():
+            model.cpu()
+        gc.collect()
+        torch.cuda.empty_cache()
+
     # Load TRELLIS.2 pipeline (shape/tex slat + decode)
     print("[2/2] Loading TRELLIS.2 pipeline (shape/tex slat) …")
     trellis2_pipeline = Trellis2ImageTo3DPipeline.from_pretrained("microsoft/TRELLIS.2-4B")
     trellis2_pipeline.cuda()
     del trellis2_pipeline.models['sparse_structure_decoder']
     del trellis2_pipeline.models['sparse_structure_flow_model']
+    if LOW_VRAM:
+        trellis2_pipeline.low_vram = True
     gc.collect()
     torch.cuda.empty_cache()
 
     # Combine into hybrid pipeline
-    pipeline = TrellisHybridPipeline(vggt_pipeline, trellis2_pipeline)
+    pipeline = TrellisHybridPipeline(vggt_pipeline, trellis2_pipeline, low_vram=LOW_VRAM)
 
     # Load HDRI environment maps for PBR rendering
     _HDRI_DIR = os.path.join('/root/jiahao/code/TRELLIS.2', 'assets', 'hdri')

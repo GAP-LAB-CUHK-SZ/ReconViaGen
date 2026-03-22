@@ -50,11 +50,23 @@ class TrellisHybridPipeline:
         self,
         vggt_pipeline: TrellisVGGTTo3DPipeline,
         trellis2_pipeline: Trellis2ImageTo3DPipeline,
+        low_vram: bool = False,
     ):
         self.vggt_pipeline    = vggt_pipeline
         self.trellis2_pipeline = trellis2_pipeline
+        self.low_vram = low_vram
+        if low_vram:
+            trellis2_pipeline.low_vram = True
 
     # ── Convenience wrappers ──────────────────────────────────────────────────
+
+    def _vggt_models_to(self, device) -> None:
+        """Move vggt_pipeline inference models to *device* (for low-VRAM mode)."""
+        vp = self.vggt_pipeline
+        if hasattr(vp, 'VGGT_model') and vp.VGGT_model is not None:
+            vp.VGGT_model.to(device)
+        for model in vp.models.values():
+            model.to(device)
 
     @property
     def device(self):
@@ -128,6 +140,9 @@ class TrellisHybridPipeline:
         """
         vp = self.vggt_pipeline
 
+        if self.low_vram:
+            self._vggt_models_to(vp.device)
+
         # VGGT feature extraction
         with torch.cuda.amp.autocast(dtype=vp.VGGT_dtype):
             aggregated_tokens_list, _ = vp.vggt_feat(images)
@@ -145,7 +160,6 @@ class TrellisHybridPipeline:
         noise   = torch.randn(1, ss_flow.in_channels, reso, reso, reso).to(vp.device)
 
         merged_params = {**vp.sparse_structure_sampler_params, **ss_sampler_params}
-        # Remove legacy GuidanceInterval keys so they don't leak into the model forward
         ss_latent = vp.sparse_structure_sampler.sample(
             ss_flow, noise, **ss_cond, **merged_params, verbose=True
         ).samples
@@ -159,6 +173,11 @@ class TrellisHybridPipeline:
             decoded = F.max_pool3d(decoded.float(), ratio, ratio, 0) > 0.5
 
         coords = torch.argwhere(decoded)[:, [0, 2, 3, 4]].int()
+
+        if self.low_vram:
+            self._vggt_models_to('cpu')
+            torch.cuda.empty_cache()
+
         return coords
 
     # ── Main run (single image) ───────────────────────────────────────────────
