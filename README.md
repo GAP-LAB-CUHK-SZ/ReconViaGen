@@ -26,7 +26,9 @@ For details, please refer to the [v0.5 branch](https://github.com/GAP-LAB-CUHK-S
 
 <div align="center">
 
-[![Demo Video](https://img.youtube.com/vi/_lP--a_TBsI/0.jpg)](https://www.youtube.com/watch?v=_lP--a_TBsI)
+<video src="https://github.com/user-attachments/assets/e04a3f51-90d1-4a1a-915c-94747d71718d" controls autoplay loop muted width="100%"></video>
+
+*Demo of ReconViaGen-v0.5*
 
 </div>
 
@@ -42,11 +44,11 @@ Reconstructing 16 images using ReconViaGen (app_fine.py) consumes less than 24GB
 ## Installation
 Clone the repo:
 ```sh
-git clone --recursive https://github.com/GAP-LAB-CUHK-SZ/ReconViaGen.git
+git clone --recursive -b v0.5 https://github.com/GAP-LAB-CUHK-SZ/ReconViaGen.git
 cd ReconViaGen
 ```
 
-Create a new conda environment named reconviagen and install the dependencies (pytorch 2.4.0 with CUDA 12.1):
+You can choose to create a new conda environment named reconviagen and install the dependencies (pytorch 2.4.0 with CUDA 12.1):
 ```sh
 . ./setup.sh --new-env --basic --xformers --flash-attn --spconv --mipgaussian --kaolin --nvdiffrast --demo
 ```
