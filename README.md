@@ -27,7 +27,7 @@ For details, please refer to the [v0.5 branch](https://github.com/GAP-LAB-CUHK-S
 
 <div align="center">
 
-<video src="https://github.com/user-attachments/assets/e04a3f51-90d1-4a1a-915c-94747d71718d" controls autoplay loop muted width="100%"></video>
+<video src="https://github.com/user-attachments/assets/26d7a61b-61e0-446c-8220-5cc09dbf080b" controls autoplay loop muted width="100%"></video>
 
 *Demo of ReconViaGen-v0.5*
 
