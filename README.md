@@ -9,19 +9,20 @@
 
 <div align="center">
 
+[![Website](https://raw.githubusercontent.com/prs-eth/Marigold/main/doc/badges/badge-website.svg)](https://jiahao620.github.io/reconviagen)
+[![Paper](https://img.shields.io/badge/arXiv-PDF-b31b1b)](https://arxiv.org/abs/2510.23306)
+[![Hugging Face Space](https://img.shields.io/badge/🤗%20Hugging%20Face%20-Space-yellow)](https://huggingface.co/spaces/Stable-X/ReconViaGen)
 
-[![Website](https://raw.githubusercontent.com/prs-eth/Marigold/main/doc/badges/badge-website.svg)](https://jiahao620.github.io/reconviagen) 
-[![Paper](https://img.shields.io/badge/arXiv-PDF-b31b1b)](https://arxiv.org/abs/2510.23306) 
-[![Hugging Face Space](https://img.shields.io/badge/🤗%20Hugging%20Face%20-Space-yellow)](https://huggingface.co/spaces/Stable-X/ReconViaGen) 
-
- </div>
+</div>
 
 ![teaser](assets/Teaser.png)
 
 **Alpha Demo**: https://huggingface.co/spaces/Stable-X/ReconViaGen.
 We welcome feedback on failure cases to help improve the model.
 
-**News**: Releasing the inference code of ReconViaGen-v0.5! Thanks for the excellent work [TRELLIS.2](https://github.com/microsoft/TRELLIS.2)! We have proposed an effective multi-view fusion strategy for TRELLIS.2, and then we combine ReconViaGen with TRELLIS.2 to enable the generation of high-resolution meshes and PBR materials.
+---
+
+**🆕 News (v0.5)** — Releasing the inference code of ReconViaGen-v0.5 in the [v0.5 branch](https://github.com/GAP-LAB-CUHK-SZ/ReconViaGen/tree/v0.5?tab=readme-ov-file) of this repository! Thanks for the excellent work [TRELLIS.2](https://github.com/microsoft/TRELLIS.2)! We have proposed an effective multi-view fusion strategy for TRELLIS.2, and then we combine ReconViaGen with TRELLIS.2 to enable the generation of high-resolution meshes and PBR materials.
 For details, please refer to the [v0.5 branch](https://github.com/GAP-LAB-CUHK-SZ/ReconViaGen/tree/v0.5?tab=readme-ov-file) of this repository.
 
 <div align="center">
@@ -32,14 +33,10 @@ For details, please refer to the [v0.5 branch](https://github.com/GAP-LAB-CUHK-S
 
 </div>
 
-
-
-**News**: Releasing the training and inference code of ReconViaGen-v0.2. We have optimized the inference process. Reconstructing 16 images using ReconViaGen without refinement (app.py) consumes less than 18GB of VRAM.
+**News (v0.2)** — Releasing the training and inference code of ReconViaGen-v0.2 in the [main branch](https://github.com/GAP-LAB-CUHK-SZ/ReconViaGen) of this repository! We have optimized the inference process. Reconstructing 16 images using ReconViaGen without refinement (app.py) consumes less than 18GB of VRAM.
 Reconstructing 16 images using ReconViaGen (app_fine.py) consumes less than 24GB of VRAM.
 
-
-**News**: An [unofficial implementation of ReconViaGen](https://github.com/estheryang11/ReconViaGen) is released! Thanks to [estheryang11](https://github.com/estheryang11) a lot!
-
+**News (Community)** — An [unofficial implementation of ReconViaGen](https://github.com/estheryang11/ReconViaGen) is released! Thanks to [estheryang11](https://github.com/estheryang11) a lot!
 
 ## Installation
 Clone the repo:
@@ -48,7 +45,7 @@ git clone --recursive https://github.com/GAP-LAB-CUHK-SZ/ReconViaGen.git
 cd ReconViaGen
 ```
 
-You can choose to create a new conda environment named reconviagen and install the dependencies (pytorch 2.4.0 with CUDA 12.1):
+Create a new conda environment named reconviagen and install the dependencies (pytorch 2.4.0 with CUDA 12.1):
 ```sh
 . ./setup.sh --new-env --basic --xformers --flash-attn --spconv --mipgaussian --kaolin --nvdiffrast --demo
 ```
