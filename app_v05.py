@@ -227,6 +227,11 @@ def image_to_3d(
     ss_guidance_rescale: float,
     ss_sampling_steps: int,
     ss_rescale_t: float,
+    # SLat params
+    slat_guidance_strength: float,
+    slat_guidance_rescale: float,
+    slat_sampling_steps: int,
+    slat_rescale_t: float,
     # Shape SLat params
     shape_slat_guidance_strength: float,
     shape_slat_guidance_rescale: float,
@@ -259,6 +264,13 @@ def image_to_3d(
         "guidance_rescale":  ss_guidance_rescale,
         "rescale_t":         ss_rescale_t,
     }
+    slat_params = {
+        "steps":             slat_sampling_steps,
+        "cfg_strength":      slat_guidance_strength,
+        "cfg_interval":      [0.6, 1.0],
+        "guidance_rescale":  slat_guidance_rescale,
+        "rescale_t":         slat_rescale_t,
+    }
     shape_slat_params = {
         "steps":             shape_slat_sampling_steps,
         "guidance_strength": shape_slat_guidance_strength,
@@ -276,6 +288,7 @@ def image_to_3d(
         out_mesh_list, latents = pipeline.run(
             images, seed=seed,
             ss_sampler_params=ss_params,
+            slat_sampler_params=slat_params,
             shape_slat_sampler_params=shape_slat_params,
             tex_slat_sampler_params=tex_slat_params,
             pipeline_type=pipeline_type,
@@ -286,6 +299,7 @@ def image_to_3d(
         out_mesh_list, latents = pipeline.run_multi_image(
             images, strategy=multi_image_strategy, seed=seed,
             ss_sampler_params=ss_params,
+            slat_sampler_params=slat_params,
             shape_slat_sampler_params=shape_slat_params,
             tex_slat_sampler_params=tex_slat_params,
             pipeline_type=pipeline_type,
@@ -486,7 +500,18 @@ with gr.Blocks(
                     ss_rescale_t         = gr.Slider(1.0, 6.0, label="Rescale T",
                                                      value=5.0, step=0.1)
 
-                gr.Markdown("**Stage 2 · Shape SLat (TRELLIS.2)**")
+                gr.Markdown("**Stage 2 · Sparse Structure (ReconViaGen)**")
+                with gr.Row():
+                    slat_guidance_strength = gr.Slider(0.0, 10.0, label="Guidance Strength",
+                                                     value=7.5, step=0.1)
+                    slat_guidance_rescale  = gr.Slider(0.0, 1.0,  label="Guidance Rescale",
+                                                     value=0.5, step=0.01)
+                    slat_sampling_steps    = gr.Slider(1, 50, label="Sampling Steps",
+                                                     value=12, step=1)
+                    slat_rescale_t         = gr.Slider(1.0, 6.0, label="Rescale T",
+                                                     value=3.0, step=0.1)
+
+                gr.Markdown("**Stage 3 · Shape SLat (TRELLIS.2)**")
                 with gr.Row():
                     shape_slat_guidance_strength = gr.Slider(1.0, 10.0,
                         label="Guidance Strength", value=7.5, step=0.1)
@@ -497,7 +522,7 @@ with gr.Blocks(
                     shape_slat_rescale_t         = gr.Slider(1.0, 6.0,
                         label="Rescale T", value=3.0, step=0.1)
 
-                gr.Markdown("**Stage 3 · Texture SLat (TRELLIS.2)**")
+                gr.Markdown("**Stage 4 · Texture SLat (TRELLIS.2)**")
                 with gr.Row():
                     tex_slat_guidance_strength = gr.Slider(1.0, 10.0,
                         label="Guidance Strength", value=1.0, step=0.1)
@@ -547,6 +572,7 @@ with gr.Blocks(
         inputs=[
             image_prompt, multi_image_strategy, seed, pipeline_type,
             ss_guidance_strength, ss_guidance_rescale, ss_sampling_steps, ss_rescale_t,
+            slat_guidance_strength, slat_guidance_rescale, slat_sampling_steps, slat_rescale_t,
             shape_slat_guidance_strength, shape_slat_guidance_rescale,
             shape_slat_sampling_steps, shape_slat_rescale_t,
             tex_slat_guidance_strength, tex_slat_guidance_rescale,
@@ -572,12 +598,9 @@ if __name__ == "__main__":
     vggt_pipeline.cuda()
     vggt_pipeline.VGGT_model.cuda()
     vggt_pipeline.birefnet_model.cuda()
-    del vggt_pipeline.slat_flow_model
-    del vggt_pipeline.models['slat_flow_model']
-    del vggt_pipeline.slat_vggt_cond
-    del vggt_pipeline.models['slat_vggt_cond']
-    del vggt_pipeline.models['slat_decoder_gs']
-    del vggt_pipeline.models['slat_decoder_mesh']
+    # Keep slat_flow_model / slat_vggt_cond / slat_decoder_mesh:
+    # _run_ss_stage now calls vggt_pipeline.run(formats=["mesh"]) which needs them.
+    del vggt_pipeline.models['slat_decoder_gs']   # Gaussian decoder not needed
 
     if LOW_VRAM:
         # Start vggt models on CPU; _run_ss_stage moves them to GPU when needed.

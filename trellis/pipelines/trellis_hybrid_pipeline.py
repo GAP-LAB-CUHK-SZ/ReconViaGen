@@ -20,7 +20,6 @@ if _TRELLIS2_ROOT not in sys.path:
 # ── Standard imports ──────────────────────────────────────────────────────────
 from typing import *
 import torch
-import torch.nn.functional as F
 import numpy as np
 from PIL import Image
 
@@ -123,7 +122,70 @@ class TrellisHybridPipeline:
         output = output[:, :, :3] * output[:, :, 3:4]
         return Image.fromarray((output * 255).astype(np.uint8))
 
-    # ── Stage 1: SS via VGGT ─────────────────────────────────────────────────
+    # ── Stage 1: SS via mesh voxelisation ────────────────────────────────────
+
+    @staticmethod
+    def _mesh_to_surface_coords(
+        mesh_result,
+        target_res: int,
+        device: torch.device,
+        simplify_ratio: float = 0.95,
+        fill_holes_max_hole_size: float = 0.04,
+        fill_holes_max_hole_nbe: int = 55,
+        fill_holes_resolution: int = 256,
+        fill_holes_num_views: int = 200,
+    ) -> torch.Tensor:
+        """
+        Convert a MeshExtractResult (surface triangle mesh in [-0.5, 0.5]^3) to
+        surface-only voxel coords [N, 4] = [batch_idx, x, y, z] in [0, target_res).
+
+        Pipeline
+        --------
+        1. Decimate + Fill holes – postprocess_mesh (pyvista decimate → GPU _fill_holes),
+           same approach as postprocessing_utils.py lines 426-437
+        2. Voxelize – Open3D surface voxelization directly at target_res
+        """
+        from trellis.utils.postprocessing_utils import postprocess_mesh
+        import open3d as o3d
+
+        verts_np = mesh_result.vertices.cpu().numpy()
+        faces_np = mesh_result.faces.cpu().numpy()
+
+        # 1. ── Decimate + fill holes (mirrors postprocessing_utils.py L426-437) ─
+        verts_np, faces_np = postprocess_mesh(
+            verts_np, faces_np,
+            simplify=True,
+            simplify_ratio=simplify_ratio,
+            fill_holes=True,
+            fill_holes_max_hole_size=fill_holes_max_hole_size,
+            fill_holes_max_hole_nbe=fill_holes_max_hole_nbe,
+            fill_holes_resolution=fill_holes_resolution,
+            fill_holes_num_views=fill_holes_num_views,
+        )
+
+        # 2. ── Voxelize directly at target_res ───────────────────────────────
+        o3d_mesh = o3d.geometry.TriangleMesh()
+        o3d_mesh.vertices  = o3d.utility.Vector3dVector(
+            np.clip(verts_np.astype(np.float64), -0.5 + 1e-6, 0.5 - 1e-6)
+        )
+        o3d_mesh.triangles = o3d.utility.Vector3iVector(faces_np.astype(np.int32))
+        voxel_grid = o3d.geometry.VoxelGrid.create_from_triangle_mesh_within_bounds(
+            o3d_mesh,
+            voxel_size=1.0 / target_res,
+            min_bound=(-0.5, -0.5, -0.5),
+            max_bound=( 0.5,  0.5,  0.5),
+        )
+        grid_idx = np.array(
+            [voxel.grid_index for voxel in voxel_grid.get_voxels()], dtype=np.int32
+        )                                               # [N, 3]  in [0, target_res)
+
+        if len(grid_idx) == 0:
+            return torch.zeros((0, 4), dtype=torch.int32, device=device)
+
+        idx = torch.tensor(grid_idx, dtype=torch.int32, device=device)
+        batch = torch.zeros(len(idx), 1, dtype=torch.int32, device=device)
+        coords = torch.cat([batch, idx], dim=1)         # [N, 4]: [0, x, y, z]
+        return coords
 
     @torch.no_grad()
     def _run_ss_stage(
@@ -131,48 +193,32 @@ class TrellisHybridPipeline:
         images: List[Image.Image],
         target_ss_res: int,
         ss_sampler_params: dict,
+        slat_sampler_params: dict,
     ) -> torch.Tensor:
         """
-        Run ReconViaGen's VGGT-conditioned sparse-structure stage.
+        Generate a rough mesh via vggt_pipeline, then voxelise it into
+        surface-only coords at target_ss_res^3 for the downstream shape/tex stages.
 
         Returns:
             coords : (N, 4) int tensor  [batch_idx, x, y, z]  in [0, target_ss_res)
         """
         vp = self.vggt_pipeline
+        # vp.device is dynamic (inferred from model params), so when models are on
+        # CPU it returns 'cpu'. Hardcode the target cuda device instead.
+        cuda_device = torch.device('cuda')
 
         if self.low_vram:
-            self._vggt_models_to(vp.device)
+            self._vggt_models_to(cuda_device)
 
-        # VGGT feature extraction
-        with torch.cuda.amp.autocast(dtype=vp.VGGT_dtype):
-            aggregated_tokens_list, _ = vp.vggt_feat(images)
-        b, n, _, _ = aggregated_tokens_list[0].shape
-
-        # DINOv2 image features (used by SS conditioning projector)
-        image_cond = vp.encode_image(images).reshape(b, n, -1, 1024)
-
-        # Build SS condition dict
-        ss_cond = vp.get_ss_cond(image_cond[:, :, 5:], aggregated_tokens_list, 1)
-
-        # Sample SS latent
-        ss_flow = vp.models['sparse_structure_flow_model']
-        reso    = ss_flow.resolution
-        noise   = torch.randn(1, ss_flow.in_channels, reso, reso, reso).to(vp.device)
-
-        merged_params = {**vp.sparse_structure_sampler_params, **ss_sampler_params}
-        ss_latent = vp.sparse_structure_sampler.sample(
-            ss_flow, noise, **ss_cond, **merged_params, verbose=True
-        ).samples
-
-        # Decode occupancy volume
-        decoded = vp.models['sparse_structure_decoder'](ss_latent) > 0
-
-        # Optionally pool to the resolution the downstream shape_slat model expects
-        if target_ss_res != decoded.shape[2]:
-            ratio   = decoded.shape[2] // target_ss_res
-            decoded = F.max_pool3d(decoded.float(), ratio, ratio, 0) > 0.5
-
-        coords = torch.argwhere(decoded)[:, [0, 2, 3, 4]].int()
+        outputs, _, _ = vp.run(
+            image=images,
+            formats=["mesh"],
+            preprocess_image=False,
+            sparse_structure_sampler_params=ss_sampler_params,
+            slat_sampler_params=slat_sampler_params,
+        )
+        mesh_result = outputs["mesh"][0]
+        coords = self._mesh_to_surface_coords(mesh_result, target_ss_res, cuda_device)
 
         if self.low_vram:
             self._vggt_models_to('cpu')
@@ -188,6 +234,7 @@ class TrellisHybridPipeline:
         images: List[Image.Image],
         seed: int = 42,
         ss_sampler_params: dict = {},
+        slat_sampler_params: dict = {},
         shape_slat_sampler_params: dict = {},
         tex_slat_sampler_params: dict = {},
         pipeline_type: str = '1024',
@@ -225,7 +272,7 @@ class TrellisHybridPipeline:
         target_ss_res = {'512': 32, '1024': 32, '1536': 32}[pipeline_type]
 
         # ── Stage 1: SS ───────────────────────────────────────────────────────
-        coords = self._run_ss_stage(images, target_ss_res, ss_sampler_params)
+        coords = self._run_ss_stage(images, target_ss_res, ss_sampler_params, slat_sampler_params)
 
         # ── Stages 2 & 3: shape_slat + tex_slat (TRELLIS.2) ──────────────────
         t2p = self.trellis2_pipeline
@@ -294,6 +341,7 @@ class TrellisHybridPipeline:
         strategy: str = 'average_right',
         seed: int = 42,
         ss_sampler_params: dict = {},
+        slat_sampler_params: dict = {},
         shape_slat_sampler_params: dict = {},
         tex_slat_sampler_params: dict = {},
         pipeline_type: str = '1024',
@@ -337,7 +385,7 @@ class TrellisHybridPipeline:
         target_ss_res = {'512': 32, '1024': 32, '1536': 32}[pipeline_type]
 
         # ── Stage 1: SS (all images fed jointly to VGGT) ─────────────────────
-        coords = self._run_ss_stage(images, target_ss_res, ss_sampler_params)
+        coords = self._run_ss_stage(images, target_ss_res, ss_sampler_params, slat_sampler_params)
 
         # ── Per-image conditioning ────────────────────────────────────────────
         t2p = self.trellis2_pipeline
