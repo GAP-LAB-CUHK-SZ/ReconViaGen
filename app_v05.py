@@ -222,6 +222,7 @@ def image_to_3d(
     multi_image_strategy: str,
     seed: int,
     pipeline_type: str,
+    ss_source: str,
     # SS params
     ss_guidance_strength: float,
     ss_guidance_rescale: float,
@@ -294,6 +295,7 @@ def image_to_3d(
             pipeline_type=pipeline_type,
             preprocess_image=False,
             return_latent=True,
+            ss_source=ss_source,
         )
     else:
         out_mesh_list, latents = pipeline.run_multi_image(
@@ -305,6 +307,7 @@ def image_to_3d(
             pipeline_type=pipeline_type,
             preprocess_image=False,
             return_latent=True,
+            ss_source=ss_source,
         )
 
     mesh = out_mesh_list[0]
@@ -478,6 +481,15 @@ with gr.Blocks(
                 label="Output Resolution",
                 info="'1024' = higher detail, more VRAM; '512' = faster",
             )
+            ss_source = gr.Radio(
+                choices=["direct", "mesh"],
+                value="mesh",
+                label="Stage 1 Coords Source",
+                info=(
+                    "direct: ReconViaGen SS diffusion → coords (fast) | "
+                    "mesh: ReconViaGen full pipeline → mesh → decimate/fill/voxelize → coords (higher quality)"
+                ),
+            )
 
             seed           = gr.Slider(0, MAX_SEED, label="Seed", value=0, step=1)
             randomize_seed = gr.Checkbox(label="Randomize Seed", value=True)
@@ -570,7 +582,7 @@ with gr.Blocks(
     ).then(
         image_to_3d,
         inputs=[
-            image_prompt, multi_image_strategy, seed, pipeline_type,
+            image_prompt, multi_image_strategy, seed, pipeline_type, ss_source,
             ss_guidance_strength, ss_guidance_rescale, ss_sampling_steps, ss_rescale_t,
             slat_guidance_strength, slat_guidance_rescale, slat_sampling_steps, slat_rescale_t,
             shape_slat_guidance_strength, shape_slat_guidance_rescale,

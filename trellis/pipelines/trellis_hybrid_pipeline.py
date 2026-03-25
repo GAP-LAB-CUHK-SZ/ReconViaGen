@@ -226,6 +226,59 @@ class TrellisHybridPipeline:
 
         return coords
 
+    @torch.no_grad()
+    def _run_ss_stage_direct(
+        self,
+        images: List[Image.Image],
+        target_ss_res: int,
+        ss_sampler_params: dict,
+    ) -> torch.Tensor:
+        """
+        Run only ReconViaGen's sparse structure diffusion stage to obtain coords
+        directly, without proceeding to the SLAT/mesh stage.
+
+        Returns:
+            coords : (N, 4) int tensor  [batch_idx, x, y, z]  in [0, target_ss_res)
+        """
+        vp = self.vggt_pipeline
+        cuda_device = torch.device('cuda')
+
+        if self.low_vram:
+            self._vggt_models_to(cuda_device)
+
+        with torch.no_grad():
+            with torch.cuda.amp.autocast(dtype=vp.VGGT_dtype):
+                aggregated_tokens_list, _ = vp.vggt_feat(images)
+            b, n, _, _ = aggregated_tokens_list[0].shape
+            image_cond = vp.encode_image(images).reshape(b, n, -1, 1024)
+            ss_cond = vp.get_ss_cond(image_cond[:, :, 5:], aggregated_tokens_list, 1)
+
+        ss_flow_model = vp.models['sparse_structure_flow_model']
+        sampler_params = {**vp.sparse_structure_sampler_params, **ss_sampler_params}
+        reso = ss_flow_model.resolution
+        ss_noise = torch.randn(1, ss_flow_model.in_channels, reso, reso, reso).to(cuda_device)
+
+        ss_latent = vp.sparse_structure_sampler.sample(
+            ss_flow_model,
+            ss_noise,
+            **ss_cond,
+            **sampler_params,
+            verbose=True,
+        ).samples
+
+        decoder = vp.models['sparse_structure_decoder']
+        decoded = decoder(ss_latent) > 0
+        if target_ss_res != decoded.shape[2]:
+            ratio = decoded.shape[2] // target_ss_res
+            decoded = torch.nn.functional.max_pool3d(decoded.float(), ratio, ratio, 0) > 0.5
+        coords = torch.argwhere(decoded)[:, [0, 2, 3, 4]].int()
+
+        if self.low_vram:
+            self._vggt_models_to('cpu')
+            torch.cuda.empty_cache()
+
+        return coords
+
     # ── Main run (single image) ───────────────────────────────────────────────
 
     @torch.no_grad()
@@ -241,6 +294,7 @@ class TrellisHybridPipeline:
         preprocess_image: bool = True,
         return_latent: bool = False,
         max_num_tokens: int = 49152,
+        ss_source: str = 'direct',
     ):
         """
         Run the full hybrid pipeline.
@@ -255,6 +309,8 @@ class TrellisHybridPipeline:
                                       flow models are used for shape/tex slat).
             preprocess_image        : Whether to preprocess images first.
             return_latent           : If True, also return (shape_slat, tex_slat, res).
+            ss_source               : direct: ReconViaGen SS diffusion → coords (fast) or
+                                      mesh: ReconViaGen full pipeline → mesh → decimate/fill/voxelize → coords (higher quality).
 
         Returns:
             List[MeshWithVoxel]  (one per sample, usually 1)
@@ -262,6 +318,8 @@ class TrellisHybridPipeline:
         """
         assert pipeline_type in ('512', '1024', '1536'), \
             f"pipeline_type must be '512' or '1024' or '1536', got '{pipeline_type}'"
+        assert ss_source in ('direct', 'mesh'), \
+            f"ss_source must be 'direct' or 'mesh', got '{ss_source}'"
 
         torch.manual_seed(seed)
 
@@ -272,7 +330,12 @@ class TrellisHybridPipeline:
         target_ss_res = {'512': 32, '1024': 32, '1536': 32}[pipeline_type]
 
         # ── Stage 1: SS ───────────────────────────────────────────────────────
-        coords = self._run_ss_stage(images, target_ss_res, ss_sampler_params, slat_sampler_params)
+        if ss_source == 'direct':
+            # ReconViaGen SS diffusion only → coords directly (no mesh)
+            coords = self._run_ss_stage_direct(images, target_ss_res, ss_sampler_params)
+        else:  # 'mesh'
+            # ReconViaGen full pipeline → mesh → decimate/fill/voxelize → coords
+            coords = self._run_ss_stage(images, target_ss_res, ss_sampler_params, slat_sampler_params)
 
         # ── Stages 2 & 3: shape_slat + tex_slat (TRELLIS.2) ──────────────────
         t2p = self.trellis2_pipeline
@@ -348,6 +411,7 @@ class TrellisHybridPipeline:
         preprocess_image: bool = True,
         return_latent: bool = False,
         max_num_tokens: int = 49152,
+        ss_source: str = 'direct',
     ):
         """
         Multi-image variant.
@@ -375,6 +439,7 @@ class TrellisHybridPipeline:
                 images, seed, ss_sampler_params,
                 shape_slat_sampler_params, tex_slat_sampler_params,
                 pipeline_type, preprocess_image, return_latent, max_num_tokens,
+                ss_source=ss_source,
             )
 
         torch.manual_seed(seed)
@@ -385,7 +450,10 @@ class TrellisHybridPipeline:
         target_ss_res = {'512': 32, '1024': 32, '1536': 32}[pipeline_type]
 
         # ── Stage 1: SS (all images fed jointly to VGGT) ─────────────────────
-        coords = self._run_ss_stage(images, target_ss_res, ss_sampler_params, slat_sampler_params)
+        if ss_source == 'direct':
+            coords = self._run_ss_stage_direct(images, target_ss_res, ss_sampler_params)
+        else:  # 'mesh'
+            coords = self._run_ss_stage(images, target_ss_res, ss_sampler_params, slat_sampler_params)
 
         # ── Per-image conditioning ────────────────────────────────────────────
         t2p = self.trellis2_pipeline
