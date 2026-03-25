@@ -1,5 +1,5 @@
 """
-app_v06.py – ReconViaGen × TRELLIS.2 hybrid demo
+app_v05.py – ReconViaGen × TRELLIS.2 hybrid demo
 =================================================
 Stage 1 (SS)     – ReconViaGen VGGT-based sparse structure
 Stage 2 (Shape)  – TRELLIS.2 shape_slat  (DINOv3-conditioned)
@@ -27,7 +27,6 @@ os.environ['XFORMERS_DISABLED']         = '1'   # DINOv2's SwiGLUFFNFused falls 
 import gradio as gr
 from datetime import datetime
 import shutil
-import uuid
 import cv2
 import base64, io
 from typing import *
@@ -464,35 +463,22 @@ with gr.Blocks(
                 type="pil", file_types=["image"],
             )
 
-            multi_image_strategy = gr.Radio(
-                choices=["average_right", "weighted_average", "sequential", "average", "adaptive_guidance_weight", "fixed_guidance_rescale"],
-                value="adaptive_guidance_weight",
-                label="Multi-image fusion strategy",
-                info=(
-                    "adaptive_guidance_weight: per-token weight = guidance magnitude ‖v_cond−v_uncond‖, t-adaptive temperature (best) | "
-                    "average_right: 1 uncond + N cond calls, CFG applied once on averaged velocity | "
-                    "weighted_average: same as average_right but views weighted by deviation from cross-view consensus | "
-                    "fixed_guidance_rescale: PoE with per-view independent rescale | "
-                    "sequential: cycle images per denoising step (cheapest) | "
-                    "average: avg pred_x_prev across images (2N passes, biased rescale)"
-                ),
-            )
-            pipeline_type = gr.Radio(
-                choices=["512", "1024", "1536"],
-                value="1024",
-                label="Output Resolution",
-                info="'1024' = higher detail, more VRAM; '512' = faster",
-            )
-            ss_source = gr.Radio(
-                choices=["direct", "mesh", "mvtrellis2"],
-                value="mesh",
-                label="Stage 1 Coords Source",
-                info=(
-                    "direct: ReconViaGen SS diffusion → coords (fast) | "
-                    "mesh: ReconViaGen full pipeline → mesh → decimate/fill/voxelize → coords (higher quality) | "
-                    "mvtrellis2: TRELLIS.2 SS flow model → coords (multi-image fusion strategy applied)"
-                ),
-            )
+            with gr.Accordion("Pipeline Settings", open=False):
+                multi_image_strategy = gr.Radio(
+                    choices=["average_right", "weighted_average", "sequential", "average", "adaptive_guidance_weight", "fixed_guidance_rescale"],
+                    value="adaptive_guidance_weight",
+                    label="Multi-image fusion strategy",
+                )
+                pipeline_type = gr.Radio(
+                    choices=["512", "1024", "1024_cascade", "1536_cascade"],
+                    value="1024",
+                    label="Output Resolution",
+                )
+                ss_source = gr.Radio(
+                    choices=["direct", "mesh", "mvtrellis2"],
+                    value="mesh",
+                    label="Stage 1 Coords Source",
+                )
 
             seed           = gr.Slider(0, MAX_SEED, label="Seed", value=0, step=1)
             randomize_seed = gr.Checkbox(label="Randomize Seed", value=False)

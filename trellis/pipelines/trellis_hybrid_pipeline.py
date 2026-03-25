@@ -371,24 +371,31 @@ class TrellisHybridPipeline:
         Run the full hybrid pipeline.
 
         Args:
-            images                  : List of (preprocessed) PIL images.
-            seed                    : Random seed.
-            ss_sampler_params       : Override params for the SS sampler.
-            shape_slat_sampler_params: Override params for the shape-SLat sampler.
-            tex_slat_sampler_params : Override params for the tex-SLat sampler.
-            pipeline_type           : '512' or '1024'  (controls which TRELLIS.2
-                                      flow models are used for shape/tex slat).
-            preprocess_image        : Whether to preprocess images first.
-            return_latent           : If True, also return (shape_slat, tex_slat, res).
-            ss_source               : direct: ReconViaGen SS diffusion → coords (fast) or
-                                      mesh: ReconViaGen full pipeline → mesh → decimate/fill/voxelize → coords (higher quality).
+            images                   : List of (preprocessed) PIL images.
+            seed                     : Random seed.
+            ss_sampler_params        : Override params for the SS sampler (ReconViaGen keys:
+                                       cfg_strength, cfg_interval, guidance_rescale, rescale_t, steps).
+            slat_sampler_params      : Override params for the ReconViaGen SLat sampler
+                                       (only used when ss_source='mesh').
+            shape_slat_sampler_params: Override params for the TRELLIS.2 shape-SLat sampler.
+            tex_slat_sampler_params  : Override params for the TRELLIS.2 tex-SLat sampler.
+            pipeline_type            : '512'          – shape/tex slat at 512 resolution.
+                                       '1024'         – coords at res 64, direct shape_slat_flow_model_1024
+                                                        (no cascade, fast).
+                                       '1024_cascade' – LR 512 → upsample → HR 1024 (higher detail).
+                                       '1536_cascade' – LR 512 → upsample → HR 1536 (highest detail).
+            preprocess_image         : Whether to preprocess images first.
+            return_latent            : If True, also return (shape_slat, tex_slat, res).
+            ss_source                : 'direct'     – ReconViaGen SS diffusion → coords (fast).
+                                       'mesh'       – ReconViaGen full pipeline → mesh → voxelize → coords.
+                                       'mvtrellis2' – TRELLIS.2 SS flow model → coords.
 
         Returns:
             List[MeshWithVoxel]  (one per sample, usually 1)
             optionally: (shape_slat, tex_slat, res)
         """
-        assert pipeline_type in ('512', '1024', '1536'), \
-            f"pipeline_type must be '512' or '1024' or '1536', got '{pipeline_type}'"
+        assert pipeline_type in ('512', '1024', '1024_cascade', '1536_cascade'), \
+            f"pipeline_type must be '512', '1024', '1024_cascade', or '1536_cascade', got '{pipeline_type}'"
         assert ss_source in ('direct', 'mesh', 'mvtrellis2'), \
             f"ss_source must be 'direct', 'mesh', or 'mvtrellis2', got '{ss_source}'"
 
@@ -397,8 +404,8 @@ class TrellisHybridPipeline:
         if preprocess_image:
             images = [self.preprocess_image(img) for img in images]
 
-        # Target SS resolution: 32 for 512-pipeline, 64 for 1024-pipeline
-        target_ss_res = {'512': 32, '1024': 32, '1536': 32}[pipeline_type]
+        # Target SS resolution: 32 for 512/cascade pipelines, 64 for direct-1024
+        target_ss_res = {'512': 32, '1024': 64, '1024_cascade': 32, '1536_cascade': 32}[pipeline_type]
 
         # ── Stage 1: SS ───────────────────────────────────────────────────────
         if ss_source == 'direct':
@@ -417,7 +424,7 @@ class TrellisHybridPipeline:
         # ── Stages 2 & 3: shape_slat + tex_slat (TRELLIS.2) ──────────────────
         t2p = self.trellis2_pipeline
 
-        cond_512 = t2p.get_cond(images, 512)
+        cond_512 = t2p.get_cond(images, 512) if pipeline_type in ('512', '1024_cascade', '1536_cascade') else None
         cond_1024 = t2p.get_cond(images, 1024) if pipeline_type != '512' else None
 
         if pipeline_type == '512':
@@ -435,6 +442,21 @@ class TrellisHybridPipeline:
             )
             res = 512
         elif pipeline_type == '1024':
+            # Direct 1024: coords at res 64 → shape_slat_flow_model_1024 (no cascade)
+            shape_slat = t2p.sample_shape_slat(
+                cond_1024,
+                t2p.models['shape_slat_flow_model_1024'],
+                coords,
+                shape_slat_sampler_params,
+            )
+            tex_slat = t2p.sample_tex_slat(
+                cond_1024,
+                t2p.models['tex_slat_flow_model_1024'],
+                shape_slat,
+                tex_slat_sampler_params,
+            )
+            res = 1024
+        elif pipeline_type == '1024_cascade':
             shape_slat, res = t2p.sample_shape_slat_cascade(
                 cond_512, cond_1024,
                 t2p.models['shape_slat_flow_model_512'], t2p.models['shape_slat_flow_model_1024'],
@@ -449,7 +471,7 @@ class TrellisHybridPipeline:
                 shape_slat,
                 tex_slat_sampler_params,
             )
-        elif pipeline_type == '1536':
+        elif pipeline_type == '1536_cascade':
             shape_slat, res = t2p.sample_shape_slat_cascade(
                 cond_512, cond_1024,
                 t2p.models['shape_slat_flow_model_512'], t2p.models['shape_slat_flow_model_1024'],
@@ -493,22 +515,24 @@ class TrellisHybridPipeline:
         """
         Multi-image variant.
 
-        The SS stage already uses all images jointly (VGGT processes them together).
+        The SS stage uses all images jointly (VGGT processes them together, or
+        TRELLIS.2 multi-image fusion when ss_source='mvtrellis2').
         The shape/tex slat stages use TRELLIS.2's ``_multi_image_sample`` with
         the chosen fusion ``strategy``.
 
-        For pipeline_type '1024' and '1536', a two-stage cascade is used:
-          - LR: _multi_image_sample with conds_512 + shape_slat_flow_model_512
-          - upsample via shape_slat_decoder.upsample
-          - HR: _multi_image_sample with conds_1024 + shape_slat_flow_model_1024
-        This mirrors the single-image run() cascade logic.
+        Pipeline types:
+          - '512'          : direct shape_slat_flow_model_512, res=512.
+          - '1024'         : coords at res 64, direct shape_slat_flow_model_1024 (no cascade).
+          - '1024_cascade' : LR 512 → upsample → HR 1024 cascade.
+          - '1536_cascade' : LR 512 → upsample → HR 1536 cascade.
 
         Args:
             strategy: 'sequential' | 'average' | 'average_right' | 'weighted_average'
+                      | 'adaptive_guidance_weight' | 'fixed_guidance_rescale'
                       (passed to Trellis2ImageTo3DPipeline._multi_image_sample)
         """
-        assert pipeline_type in ('512', '1024', '1536'), \
-            f"pipeline_type must be '512', '1024', or '1536', got '{pipeline_type}'"
+        assert pipeline_type in ('512', '1024', '1024_cascade', '1536_cascade'), \
+            f"pipeline_type must be '512', '1024', '1024_cascade', or '1536_cascade', got '{pipeline_type}'"
 
         # Single image → fall back to run()
         if len(images) == 1:
@@ -530,7 +554,7 @@ class TrellisHybridPipeline:
         if preprocess_image:
             images = [self.preprocess_image(img) for img in images]
 
-        target_ss_res = {'512': 32, '1024': 32, '1536': 32}[pipeline_type]
+        target_ss_res = {'512': 32, '1024': 64, '1024_cascade': 32, '1536_cascade': 32}[pipeline_type]
 
         # ── Stage 1: SS (all images fed jointly) ─────────────────────────────
         if ss_source == 'direct':
@@ -546,7 +570,7 @@ class TrellisHybridPipeline:
 
         # ── Per-image conditioning ────────────────────────────────────────────
         t2p = self.trellis2_pipeline
-        conds_512  = [t2p.get_cond([img], 512) for img in images]
+        conds_512  = [t2p.get_cond([img], 512) for img in images] if pipeline_type in ('512', '1024_cascade', '1536_cascade') else None
         conds_1024 = [t2p.get_cond([img], 1024) for img in images] if pipeline_type != '512' else None
 
         std_shape  = torch.tensor(t2p.shape_slat_normalization['std'])[None]
@@ -593,8 +617,14 @@ class TrellisHybridPipeline:
             tex_slat   = _sample_tex(t2p.models['tex_slat_flow_model_512'], conds_512, shape_slat)
             res = 512
 
-        else:  # '1024' or '1536' — cascade: LR (512) → upsample → HR (1024)
-            target_res = {'1024': 1024, '1536': 1536}[pipeline_type]
+        elif pipeline_type == '1024':
+            # Direct 1024: coords at res 64 → shape_slat_flow_model_1024 (no cascade)
+            shape_slat = _sample_shape(t2p.models['shape_slat_flow_model_1024'], conds_1024, "Sampling shape SLat (1024 direct)")
+            tex_slat   = _sample_tex(t2p.models['tex_slat_flow_model_1024'], conds_1024, shape_slat)
+            res = 1024
+
+        else:  # '1024_cascade' or '1536_cascade' — cascade: LR (512) → upsample → HR (1024)
+            target_res = {'1024_cascade': 1024, '1536_cascade': 1536}[pipeline_type]
 
             # LR stage: multi-image sample at 512 resolution
             fm_lr = t2p.models['shape_slat_flow_model_512']
