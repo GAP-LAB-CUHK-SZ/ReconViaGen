@@ -201,18 +201,18 @@ def end_session(req: gr.Request):
 def preprocess_images(images: List[Tuple[Image.Image, str]]) -> List[Image.Image]:
     return [pipeline.preprocess_image(img[0]) for img in images]
 
-def preprocess_videos(video: str) -> List[Image.Image]:
+def preprocess_videos(video: str, num_per_second: float) -> List[Image.Image]:
     vid = imageio.get_reader(video, 'ffmpeg')
     fps = vid.get_meta_data()['fps']
     frames = []
     for i, frame in enumerate(vid):
-        if i % max(int(fps), 1) == 0:
+        if i % max(int(fps/num_per_second), 1) == 0:
             img = Image.fromarray(frame)
             W, H = img.size
             img = img.resize((int(W / H * 512), 512))
             frames.append(img)
     vid.close()
-    return [pipeline.preprocess_image(f) for f in frames]
+    return frames
 
 
 # ── 3D generation ─────────────────────────────────────────────────────────────
@@ -500,6 +500,8 @@ with gr.Blocks(
                                           value=500000, step=10000)
             texture_size = gr.Slider(1024, 4096, label="Texture Size",
                                      value=2048, step=1024)
+            num_per_second = gr.Slider(0.1, 30, label="Frames Per Second",
+                                       value=1, step=0.1)
 
             generate_btn = gr.Button("Generate", variant="primary")
 
@@ -575,7 +577,7 @@ with gr.Blocks(
     demo.load(start_session)
     demo.unload(end_session)
 
-    input_video.upload(preprocess_videos, inputs=[input_video], outputs=[image_prompt])
+    input_video.upload(preprocess_videos, inputs=[input_video, num_per_second], outputs=[image_prompt])
     input_video.clear(lambda: (None, None), outputs=[input_video, image_prompt])
 
     # NOTE: removed upload-time preprocessing to avoid double-preprocessing
