@@ -495,7 +495,7 @@ with gr.Blocks(
             )
 
             seed           = gr.Slider(0, MAX_SEED, label="Seed", value=0, step=1)
-            randomize_seed = gr.Checkbox(label="Randomize Seed", value=True)
+            randomize_seed = gr.Checkbox(label="Randomize Seed", value=False)
             decimation_target = gr.Slider(100000, 1000000, label="Decimation Target",
                                           value=500000, step=10000)
             texture_size = gr.Slider(1024, 4096, label="Texture Size",
@@ -511,7 +511,7 @@ with gr.Blocks(
                     ss_guidance_rescale  = gr.Slider(0.0, 1.0,  label="Guidance Rescale",
                                                      value=0.7, step=0.01)
                     ss_sampling_steps    = gr.Slider(1, 50, label="Sampling Steps",
-                                                     value=12, step=1)
+                                                     value=30, step=1)
                     ss_rescale_t         = gr.Slider(1.0, 6.0, label="Rescale T",
                                                      value=5.0, step=0.1)
 
