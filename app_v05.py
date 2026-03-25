@@ -471,7 +471,7 @@ with gr.Blocks(
                 )
                 pipeline_type = gr.Radio(
                     choices=["512", "1024", "1024_cascade", "1536_cascade"],
-                    value="1024",
+                    value="1024_cascade",
                     label="Output Resolution",
                 )
                 ss_source = gr.Radio(
