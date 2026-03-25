@@ -293,7 +293,7 @@ def image_to_3d(
             shape_slat_sampler_params=shape_slat_params,
             tex_slat_sampler_params=tex_slat_params,
             pipeline_type=pipeline_type,
-            preprocess_image=False,
+            preprocess_image=True,
             return_latent=True,
             ss_source=ss_source,
         )
@@ -305,7 +305,7 @@ def image_to_3d(
             shape_slat_sampler_params=shape_slat_params,
             tex_slat_sampler_params=tex_slat_params,
             pipeline_type=pipeline_type,
-            preprocess_image=False,
+            preprocess_image=True,
             return_latent=True,
             ss_source=ss_source,
         )
@@ -469,10 +469,12 @@ with gr.Blocks(
                 value="adaptive_guidance_weight",
                 label="Multi-image fusion strategy",
                 info=(
-                    "average_right: 1 uncond + N cond calls, CFG on averaged velocity (recommended) | "
-                    "weighted_average: same but views weighted by cosine similarity to consensus | "
-                    "sequential: cycle images per denoising step | "
-                    "average: avg pred_x_prev across images"
+                    "adaptive_guidance_weight: per-token weight = guidance magnitude ‖v_cond−v_uncond‖, t-adaptive temperature (best) | "
+                    "average_right: 1 uncond + N cond calls, CFG applied once on averaged velocity | "
+                    "weighted_average: same as average_right but views weighted by deviation from cross-view consensus | "
+                    "fixed_guidance_rescale: PoE with per-view independent rescale | "
+                    "sequential: cycle images per denoising step (cheapest) | "
+                    "average: avg pred_x_prev across images (2N passes, biased rescale)"
                 ),
             )
             pipeline_type = gr.Radio(
@@ -482,12 +484,13 @@ with gr.Blocks(
                 info="'1024' = higher detail, more VRAM; '512' = faster",
             )
             ss_source = gr.Radio(
-                choices=["direct", "mesh"],
-                value="mesh",
+                choices=["direct", "mesh", "mvtrellis2"],
+                value="mvtrellis2",
                 label="Stage 1 Coords Source",
                 info=(
                     "direct: ReconViaGen SS diffusion → coords (fast) | "
-                    "mesh: ReconViaGen full pipeline → mesh → decimate/fill/voxelize → coords (higher quality)"
+                    "mesh: ReconViaGen full pipeline → mesh → decimate/fill/voxelize → coords (higher quality) | "
+                    "mvtrellis2: TRELLIS.2 SS flow model → coords (multi-image fusion strategy applied)"
                 ),
             )
 
@@ -508,7 +511,7 @@ with gr.Blocks(
                     ss_guidance_rescale  = gr.Slider(0.0, 1.0,  label="Guidance Rescale",
                                                      value=0.7, step=0.01)
                     ss_sampling_steps    = gr.Slider(1, 50, label="Sampling Steps",
-                                                     value=30, step=1)
+                                                     value=12, step=1)
                     ss_rescale_t         = gr.Slider(1.0, 6.0, label="Rescale T",
                                                      value=5.0, step=0.1)
 
@@ -575,7 +578,10 @@ with gr.Blocks(
     input_video.upload(preprocess_videos, inputs=[input_video], outputs=[image_prompt])
     input_video.clear(lambda: (None, None), outputs=[input_video, image_prompt])
 
-    image_prompt.upload(preprocess_images, inputs=[image_prompt], outputs=[image_prompt])
+    # NOTE: removed upload-time preprocessing to avoid double-preprocessing
+    # when images are uploaded one at a time. Preprocessing now happens in
+    # image_to_3d by passing preprocess_image=True to the pipeline.
+    # image_prompt.upload(preprocess_images, inputs=[image_prompt], outputs=[image_prompt])
 
     generate_btn.click(
         get_seed, inputs=[randomize_seed, seed], outputs=[seed],
@@ -626,8 +632,8 @@ if __name__ == "__main__":
     print("[2/2] Loading TRELLIS.2 pipeline (shape/tex slat) …")
     trellis2_pipeline = Trellis2ImageTo3DPipeline.from_pretrained("microsoft/TRELLIS.2-4B")
     trellis2_pipeline.cuda()
-    del trellis2_pipeline.models['sparse_structure_decoder']
-    del trellis2_pipeline.models['sparse_structure_flow_model']
+    # del trellis2_pipeline.models['sparse_structure_decoder']
+    # del trellis2_pipeline.models['sparse_structure_flow_model']
     if LOW_VRAM:
         trellis2_pipeline.low_vram = True
     gc.collect()

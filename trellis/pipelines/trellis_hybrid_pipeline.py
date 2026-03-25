@@ -279,6 +279,77 @@ class TrellisHybridPipeline:
 
         return coords
 
+    @staticmethod
+    def _translate_ss_params(ss_sampler_params: dict) -> dict:
+        """
+        Translate ReconViaGen SS sampler param keys to TRELLIS.2 format.
+
+        ReconViaGen uses ``cfg_strength`` / ``cfg_interval``;
+        TRELLIS.2 expects ``guidance_strength`` / ``guidance_interval``.
+        All other keys (steps, guidance_rescale, rescale_t) pass through unchanged.
+        """
+        mapping = {'cfg_strength': 'guidance_strength', 'cfg_interval': 'guidance_interval'}
+        return {mapping.get(k, k): v for k, v in ss_sampler_params.items()}
+
+    @torch.no_grad()
+    def _run_ss_stage_trellis2(
+        self,
+        images: List[Image.Image],
+        target_ss_res: int,
+        strategy: Optional[str] = None,
+        sampler_params: dict = {},
+    ) -> torch.Tensor:
+        """
+        Use TRELLIS.2's sparse structure flow model to generate voxel coordinates.
+
+        - Single image or strategy=None : calls t2p.sample_sparse_structure() directly.
+        - Multi-image with strategy     : uses t2p._multi_image_sample() for fusion.
+
+        Args:
+            sampler_params: Override params in TRELLIS.2 key format
+                            (guidance_strength, guidance_rescale, rescale_t, steps).
+                            Use _translate_ss_params() to convert from ReconViaGen format.
+
+        Returns:
+            coords : (N, 4) int tensor  [batch_idx, x, y, z]  in [0, target_ss_res)
+        """
+        t2p = self.trellis2_pipeline
+
+        if len(images) == 1 or strategy is None:
+            cond_512 = t2p.get_cond(images, 512)
+            return t2p.sample_sparse_structure(
+                cond_512, target_ss_res, num_samples=1,
+                sampler_params=sampler_params,
+            )
+
+        # Multi-image: per-image conds + fusion strategy
+        conds_512 = [t2p.get_cond([img], 512) for img in images]
+        flow_model_ss = t2p.models['sparse_structure_flow_model']
+        reso = flow_model_ss.resolution
+        noise = torch.randn(1, flow_model_ss.in_channels, reso, reso, reso).to(t2p.device)
+        if t2p.low_vram:
+            flow_model_ss.to(t2p.device)
+        z_s = t2p._multi_image_sample(
+            t2p.sparse_structure_sampler, flow_model_ss, noise,
+            conds_512, t2p.sparse_structure_sampler_params, sampler_params,
+            strategy=strategy, verbose=True,
+            tqdm_desc="Sampling sparse structure (TRELLIS.2)",
+        )
+        if t2p.low_vram:
+            flow_model_ss.cpu()
+
+        decoder_ss = t2p.models['sparse_structure_decoder']
+        if t2p.low_vram:
+            decoder_ss.to(t2p.device)
+        decoded = decoder_ss(z_s) > 0
+        if t2p.low_vram:
+            decoder_ss.cpu()
+
+        if target_ss_res != decoded.shape[2]:
+            ratio = decoded.shape[2] // target_ss_res
+            decoded = torch.nn.functional.max_pool3d(decoded.float(), ratio, ratio, 0) > 0.5
+        return torch.argwhere(decoded)[:, [0, 2, 3, 4]].int()
+
     # ── Main run (single image) ───────────────────────────────────────────────
 
     @torch.no_grad()
@@ -318,8 +389,8 @@ class TrellisHybridPipeline:
         """
         assert pipeline_type in ('512', '1024', '1536'), \
             f"pipeline_type must be '512' or '1024' or '1536', got '{pipeline_type}'"
-        assert ss_source in ('direct', 'mesh'), \
-            f"ss_source must be 'direct' or 'mesh', got '{ss_source}'"
+        assert ss_source in ('direct', 'mesh', 'mvtrellis2'), \
+            f"ss_source must be 'direct', 'mesh', or 'mvtrellis2', got '{ss_source}'"
 
         torch.manual_seed(seed)
 
@@ -333,6 +404,12 @@ class TrellisHybridPipeline:
         if ss_source == 'direct':
             # ReconViaGen SS diffusion only → coords directly (no mesh)
             coords = self._run_ss_stage_direct(images, target_ss_res, ss_sampler_params)
+        elif ss_source == 'mvtrellis2':
+            # TRELLIS.2 SS flow model → coords (single image, no fusion strategy)
+            coords = self._run_ss_stage_trellis2(
+                images, target_ss_res, strategy=None,
+                sampler_params=self._translate_ss_params(ss_sampler_params),
+            )
         else:  # 'mesh'
             # ReconViaGen full pipeline → mesh → decimate/fill/voxelize → coords
             coords = self._run_ss_stage(images, target_ss_res, ss_sampler_params, slat_sampler_params)
@@ -436,9 +513,15 @@ class TrellisHybridPipeline:
         # Single image → fall back to run()
         if len(images) == 1:
             return self.run(
-                images, seed, ss_sampler_params,
-                shape_slat_sampler_params, tex_slat_sampler_params,
-                pipeline_type, preprocess_image, return_latent, max_num_tokens,
+                images, seed=seed,
+                ss_sampler_params=ss_sampler_params,
+                slat_sampler_params=slat_sampler_params,
+                shape_slat_sampler_params=shape_slat_sampler_params,
+                tex_slat_sampler_params=tex_slat_sampler_params,
+                pipeline_type=pipeline_type,
+                preprocess_image=preprocess_image,
+                return_latent=return_latent,
+                max_num_tokens=max_num_tokens,
                 ss_source=ss_source,
             )
 
@@ -449,9 +532,15 @@ class TrellisHybridPipeline:
 
         target_ss_res = {'512': 32, '1024': 32, '1536': 32}[pipeline_type]
 
-        # ── Stage 1: SS (all images fed jointly to VGGT) ─────────────────────
+        # ── Stage 1: SS (all images fed jointly) ─────────────────────────────
         if ss_source == 'direct':
             coords = self._run_ss_stage_direct(images, target_ss_res, ss_sampler_params)
+        elif ss_source == 'mvtrellis2':
+            # TRELLIS.2 SS flow model with multi-image fusion strategy
+            coords = self._run_ss_stage_trellis2(
+                images, target_ss_res, strategy=strategy,
+                sampler_params=self._translate_ss_params(ss_sampler_params),
+            )
         else:  # 'mesh'
             coords = self._run_ss_stage(images, target_ss_res, ss_sampler_params, slat_sampler_params)
 
