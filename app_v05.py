@@ -485,7 +485,7 @@ with gr.Blocks(
             )
             ss_source = gr.Radio(
                 choices=["direct", "mesh", "mvtrellis2"],
-                value="mvtrellis2",
+                value="mesh",
                 label="Stage 1 Coords Source",
                 info=(
                     "direct: ReconViaGen SS diffusion → coords (fast) | "
