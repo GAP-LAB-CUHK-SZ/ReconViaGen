@@ -511,7 +511,7 @@ with gr.Blocks(
                     ss_guidance_rescale  = gr.Slider(0.0, 1.0,  label="Guidance Rescale",
                                                      value=0.7, step=0.01)
                     ss_sampling_steps    = gr.Slider(1, 50, label="Sampling Steps",
-                                                     value=30, step=1)
+                                                     value=12, step=1)
                     ss_rescale_t         = gr.Slider(1.0, 6.0, label="Rescale T",
                                                      value=5.0, step=0.1)
 
