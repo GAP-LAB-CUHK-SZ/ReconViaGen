@@ -398,44 +398,22 @@ def extract_glb(
 
 # ── Multi-view examples ───────────────────────────────────────────────────────
 
-def prepare_multi_example() -> List[Image.Image]:
+def prepare_multi_example() -> list:
+    """Return list of [image_path_list] for gr.Examples with Gallery input."""
     example_dir = os.path.join(_HERE, "assets", "example_multi_image")
     if not os.path.exists(example_dir):
         return []
-    multi_case = list(set([i.split('_')[0] for i in os.listdir(example_dir)]))
-    images = []
-    for case in multi_case:
-        _imgs = []
+    cases = sorted(set(i.split('_')[0] for i in os.listdir(example_dir)))
+    result = []
+    for case in cases:
+        paths = []
         for i in range(1, 9):
             p = os.path.join(example_dir, f'{case}_{i}.png')
             if os.path.exists(p):
-                img = Image.open(p)
-                W, H = img.size
-                img = img.resize((int(W / H * 512), 512))
-                _imgs.append(np.array(img))
-        if _imgs:
-            images.append(Image.fromarray(np.concatenate(_imgs, axis=1)))
-    return images
-
-
-def split_image(image) -> List[Image.Image]:
-    if image is None:
-        return []
-    if isinstance(image, str):
-        image = Image.open(image)
-    elif isinstance(image, np.ndarray):
-        image = Image.fromarray(image)
-    if not isinstance(image, Image.Image):
-        return []
-    if image.mode != 'RGBA':
-        image = image.convert('RGBA')
-    arr   = np.array(image)
-    alpha = arr[..., 3]
-    cols  = np.any(alpha > 0, axis=0)
-    starts = np.where(~cols[:-1] & cols[1:])[0].tolist()
-    ends   = np.where(cols[:-1]  & ~cols[1:])[0].tolist()
-    return [pipeline.preprocess_image(Image.fromarray(arr[:, s:e+1]))
-            for s, e in zip(starts, ends)]
+                paths.append(p)
+        if paths:
+            result.append([paths])
+    return result
 
 
 # ── Gradio UI ─────────────────────────────────────────────────────────────────
@@ -549,13 +527,9 @@ with gr.Blocks(
 
     # Example row
     with gr.Row():
-        _dummy_img = gr.Image(visible=False, type="pil", image_mode="RGBA")
         examples_multi = gr.Examples(
             examples=prepare_multi_example(),
-            inputs=[_dummy_img],
-            fn=split_image,
-            outputs=[image_prompt],
-            run_on_click=True,
+            inputs=[image_prompt],
             examples_per_page=8,
         )
 
