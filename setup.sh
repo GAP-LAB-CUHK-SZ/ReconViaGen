@@ -110,7 +110,7 @@ case $PLATFORM in
 esac
 
 if [ "$BASIC" = true ] ; then
-    pip install pillow imageio imageio-ffmpeg tqdm easydict opencv-python-headless scipy ninja rembg onnxruntime trimesh open3d xatlas pyvista pymeshfix igraph lpips dreamsim kornia==0.8.2 huggingface_hub==0.33.4 transformers==5.3.0
+    pip install pillow imageio imageio-ffmpeg tqdm easydict opencv-python-headless scipy ninja rembg onnxruntime trimesh open3d xatlas pyvista pymeshfix igraph lpips kornia==0.8.2 huggingface_hub==0.33.4 transformers==5.3.0
     pip install zstandard pillow-simd
     pip install rtree
     pip install fast-simplification

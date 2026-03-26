@@ -183,74 +183,6 @@ class FlowEulerSampler(Sampler):
         torch.cuda.empty_cache()
         return edict({"pred_x_prev": pred_x_prev, "pred_x_0": pred_x_0, "pred_eps": pred_eps})
 
-    def sample_slat_once_opt_delta_v(
-        self,
-        model,
-        slat_decoder_gs,
-        slat_decoder_mesh,
-        std, 
-        mean,
-        dreamsim_model,
-        learning_rate,
-        input_images,
-        extrinsics, 
-        intrinsics,
-        x_t,
-        t: float,
-        t_prev: float,
-        cond: Optional[Any] = None,
-        **kwargs
-    ):
-        """
-        Sample x_{t-1} from the model using Euler method.
-        
-        Args:
-            model: The model to sample from.
-            x_t: The [N x C x ...] tensor of noisy inputs at time t.
-            t: The current timestep.
-            t_prev: The previous timestep.
-            cond: conditional information.
-            **kwargs: Additional arguments for model inference.
-
-        Returns:
-            a dict containing the following
-            - 'pred_x_prev': x_{t-1}.
-            - 'pred_x_0': a prediction of x_0.
-        """
-        torch.cuda.empty_cache()
-        with torch.no_grad():
-            pred_x_0, pred_eps, pred_v = self._get_model_prediction(model, x_t, t, cond, **kwargs)
-        pred_v_opt_feat = torch.nn.Parameter(pred_v.feats.detach().clone())
-        optimizer = torch.optim.Adam([pred_v_opt_feat], betas=(0.5, 0.9), lr=learning_rate)
-        pred_v_opt = sp.SparseTensor(feats=pred_v_opt_feat, coords=pred_v.coords)
-        total_steps = 5
-        image_resolution = 259
-        input_images = F.interpolate(input_images, size=(image_resolution, image_resolution), mode='bilinear', align_corners=False)
-        with tqdm(total=total_steps, disable=True, desc='Appearance (opt): optimizing') as pbar:
-            for step in range(total_steps):
-                optimizer.zero_grad()
-                pred_x_0, _ = self._v_to_xstart_eps(x_t=x_t, t=t, v=pred_v_opt)
-                pred_gs = slat_decoder_gs(pred_x_0 * std + mean)
-                # pred_mesh = slat_decoder_mesh(pred_x_0 * std + mean)
-                rend_gs = render_utils.render_frames(pred_gs[0], extrinsics, intrinsics, {'resolution': image_resolution, 'bg_color': (0, 0, 0)}, need_depth=True, opt=True)['color']
-                # rend_mesh = render_utils.render_frames_opt(pred_mesh[0], extrinsics, intrinsics, {'resolution': 518, 'bg_color': (0, 0, 0)}, need_depth=True, opt=True)['color']
-                rend_gs = torch.stack(rend_gs, dim=0)
-                loss_gs = loss_utils.l1_loss(rend_gs, input_images, size_average=False).mean(dim=(1,2,3)) + \
-                    (1 - loss_utils.ssim(rend_gs, input_images, size_average=False)) + \
-                        loss_utils.lpips(rend_gs, input_images, size_average=False).mean(dim=(1,2,3)) + \
-                            dreamsim_model(rend_gs, input_images)
-                loss_gs = loss_gs[loss_gs <= 0.8].mean()
-                # loss_gs = (1 - loss_utils.ssim(rend_gs, input_images)) + loss_utils.lpips(rend_gs, input_images) + dreamsim_model(rend_gs, input_images).mean()
-                # loss_mesh = loss_utils.l1_loss(rend_mesh, input_images) + 0.2 * (1 - loss_utils.ssim(rend_mesh, input_images)) + 0.2 * loss_utils.lpips(rend_mesh, input_images)
-                loss = loss_gs + 0.2 * loss_utils.l1_loss(pred_v_opt_feat, pred_v.feats)
-                loss.backward()
-                optimizer.step()
-                pbar.set_postfix({'loss': loss.item()})
-                pbar.update()
-        
-        pred_x_prev = x_t - (t - t_prev) * pred_v_opt.detach()
-        torch.cuda.empty_cache()
-        return edict({"pred_x_prev": pred_x_prev, "pred_x_0": pred_x_0, "pred_eps": pred_eps})
 
     def sample_opt(
         self,
@@ -348,66 +280,6 @@ class FlowEulerSampler(Sampler):
         ret.samples = sample
         return ret
 
-    def sample_slat_opt_delta_v(
-        self,
-        model,
-        slat_decoder_gs,
-        slat_decoder_mesh,
-        std,
-        mean,
-        dreamsim_model,
-        apperance_learning_rate,
-        start_t,
-        input_images,
-        extrinsics, 
-        intrinsics,
-        noise,
-        cond: Optional[Any] = None,
-        steps: int = 50,
-        rescale_t: float = 1.0,
-        verbose: bool = True,
-        **kwargs
-    ):
-        """
-        Generate samples from the model using Euler method.
-        
-        Args:
-            model: The model to sample from.
-            noise: The initial noise tensor.
-            cond: conditional information.
-            steps: The number of steps to sample.
-            rescale_t: The rescale factor for t.
-            verbose: If True, show a progress bar.
-            **kwargs: Additional arguments for model_inference.
-
-        Returns:
-            a dict containing the following
-            - 'samples': the model samples.
-            - 'pred_x_t': a list of prediction of x_t.
-            - 'pred_x_0': a list of prediction of x_0.
-        """
-        sample = noise
-        t_seq = np.linspace(1, 0, steps + 1)
-        t_seq = rescale_t * t_seq / (1 + (rescale_t - 1) * t_seq)
-        t_pairs = list((t_seq[i], t_seq[i + 1]) for i in range(steps))
-        ret = edict({"samples": None, "pred_x_t": [], "pred_x_0": []})
-        # def cosine_anealing(step, total_steps, start_lr, end_lr):
-        #     return end_lr + 0.5 * (start_lr - end_lr) * (1 + np.cos(np.pi * step / total_steps))
-        for i, (t, t_prev) in enumerate(tqdm(t_pairs, desc="Sampling", disable=not verbose)):
-            if t > start_t:
-                out = self.sample_once(model, sample, t, t_prev, cond, **kwargs)
-                sample = out.pred_x_prev
-                ret.pred_x_t.append(out.pred_x_prev)
-                ret.pred_x_0.append(out.pred_x_0)
-            else:
-                # learning_rate = cosine_anealing(i - int(np.where(t_seq <= start_t)[0].min()), int(steps - np.where(t_seq <= start_t)[0].min()), apperance_learning_rate, 1e-5)
-                learning_rate = apperance_learning_rate
-                out = self.sample_slat_once_opt_delta_v(model, slat_decoder_gs, slat_decoder_mesh, std, mean, dreamsim_model, learning_rate, input_images, extrinsics, intrinsics, sample, t, t_prev, cond, **kwargs)
-                sample = out.pred_x_prev
-                ret.pred_x_t.append(out.pred_x_prev)
-                ret.pred_x_0.append(out.pred_x_0)
-        ret.samples = sample
-        return ret
 
     @torch.no_grad()
     def sample(
@@ -868,53 +740,6 @@ class FlowEulerGuidanceIntervalSampler(GuidanceIntervalSamplerMixin, ClassifierF
             - 'pred_x_0': a list of prediction of x_0.
         """
         return super().sample_ss_opt_delta_v(model, ss_decoder, ss_learning_rate, ss_start_t, ss, noise, cond, steps, rescale_t, verbose, neg_cond=neg_cond, cfg_strength=cfg_strength, cfg_interval=cfg_interval, **kwargs)
-
-
-    def sample_slat_opt_delta_v(
-        self,
-        model,
-        slat_decoder_gs,
-        slat_decoder_mesh,
-        std,
-        mean,
-        dreamsim_model,
-        apperance_learning_rate,
-        start_t,
-        input_images,
-        extrinsics, 
-        intrinsics,
-        noise,
-        cond,
-        neg_cond,
-        steps: int = 50,
-        rescale_t: float = 1.0,
-        cfg_strength: float = 3.0,
-        cfg_interval: Tuple[float, float] = (0.0, 1.0),
-        verbose: bool = True,
-        **kwargs
-    ):
-        """
-        Generate samples from the model using Euler method.
-        
-        Args:
-            model: The model to sample from.
-            noise: The initial noise tensor.
-            cond: conditional information.
-            neg_cond: negative conditional information.
-            steps: The number of steps to sample.
-            rescale_t: The rescale factor for t.
-            cfg_strength: The strength of classifier-free guidance.
-            cfg_interval: The interval for classifier-free guidance.
-            verbose: If True, show a progress bar.
-            **kwargs: Additional arguments for model_inference.
-
-        Returns:
-            a dict containing the following
-            - 'samples': the model samples.
-            - 'pred_x_t': a list of prediction of x_t.
-            - 'pred_x_0': a list of prediction of x_0.
-        """
-        return super().sample_slat_opt_delta_v(model, slat_decoder_gs, slat_decoder_mesh, std, mean, dreamsim_model, apperance_learning_rate, start_t, input_images, extrinsics, intrinsics,noise, cond, steps, rescale_t, verbose, neg_cond=neg_cond, cfg_strength=cfg_strength, cfg_interval=cfg_interval, **kwargs)
 
 
 class LatentMatchGuidanceIntervalSampler(GuidanceIntervalSamplerMixin, LatentMatchSampler):

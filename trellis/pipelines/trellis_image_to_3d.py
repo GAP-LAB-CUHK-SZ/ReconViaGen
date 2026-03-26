@@ -20,7 +20,6 @@ from scipy.spatial.transform import Rotation
 from transformers import AutoModelForImageSegmentation
 import rembg
 # for app_refine.py, please uncomment these lines
-from dreamsim import dreamsim 
 from tqdm import tqdm
 
 def export_point_cloud(xyz, color):
@@ -616,68 +615,6 @@ class TrellisImageTo3DPipeline(Pipeline):
         slat = slat * std + mean
         return slat
 
-    def sample_slat_opt(
-        self,
-        apperance_learning_rate,
-        start_t,
-        input_images: torch.Tensor,
-        extrinsics: torch.Tensor,
-        intrinsics: torch.Tensor,
-        cond: dict,
-        coords: torch.Tensor,
-        sampler_params: dict = {},
-    ) -> sp.SparseTensor:
-        """
-        Sample structured latent with the given conditioning.
-        
-        Args:
-            cond (dict): The conditioning information.
-            coords (torch.Tensor): The coordinates of the sparse structure.
-            sampler_params (dict): Additional parameters for the sampler.
-        """
-        # Sample structured latent
-        flow_model = self.models['slat_flow_model']
-        slat_decoder_gs = self.models['slat_decoder_gs']
-        slat_decoder_mesh = self.models['slat_decoder_mesh']
-        noise = sp.SparseTensor(
-            feats=torch.randn(coords.shape[0], flow_model.in_channels).to(self.device),
-            coords=coords,
-        )
-        std = torch.tensor(self.slat_normalization['std'])[None].to(self.device)
-        mean = torch.tensor(self.slat_normalization['mean'])[None].to(self.device)
-        sampler_params = {**self.slat_sampler_params, **sampler_params}
-        slat = self.slat_sampler.sample_slat_opt_delta_v(
-            flow_model,
-            slat_decoder_gs,
-            slat_decoder_mesh,
-            std,
-            mean,
-            self.dreamsim_model,
-            apperance_learning_rate,
-            start_t,
-            input_images,
-            extrinsics, 
-            intrinsics,
-            noise,
-            **cond,
-            **sampler_params,
-            verbose=True
-        ).samples
-
-        slat = slat * std + mean
-        # from trellis.utils import render_utils, postprocessing_utils
-        # import imageio
-        # std = torch.tensor(self.slat_normalization['std'])[None].to(noise.device)
-        # mean = torch.tensor(self.slat_normalization['mean'])[None].to(noise.device)
-        # for i in range(sampler_params['steps']):
-        #     latent = slat.pred_x_0[i] * std + mean
-        #     outputs = self.decode_slat(latent, ["mesh", "gaussian"])
-        #     video_geo = render_utils.render_video(outputs['mesh'][0], resolution=512, pitch=0, inverse_direction=True, num_frames=120)['normal']
-        #     video_color = render_utils.render_video(outputs['gaussian'][0], resolution=512, pitch=0, inverse_direction=True, num_frames=120)['color']
-        #     video = [np.concatenate([video_color[i], video_geo[i]], axis=1) for i in range(len(video_color))]
-        #     imageio.mimsave('outputs/slat_iter_{i:02d}.mp4'.format(i=i), video, fps=15)
-        return slat
-
     def get_input(self, batch_data):
         std = torch.tensor(self.slat_normalization['std'])[None].to(self.device)
         mean = torch.tensor(self.slat_normalization['mean'])[None].to(self.device)
@@ -973,67 +910,6 @@ class TrellisVGGTTo3DPipeline(TrellisImageTo3DPipeline):
         slat = self.sample_slat(slat_cond, coords, slat_sampler_params)
         return self.decode_slat(slat, formats), coords, ss_noise
 
-    def run_refine(
-        self,
-        image: Union[torch.Tensor, list[Image.Image]],
-        ss_learning_rate: float,
-        ss_start_t: float,
-        apperance_learning_rate: float,
-        apperance_start_t: float,
-        extrinsics: torch.Tensor,
-        intrinsics: torch.Tensor,
-        ss_noise: torch.Tensor,
-        input_points: torch.Tensor,
-        ss_refine_type: str = 'No',
-        coords: torch.Tensor = None,
-        num_samples: int = 1,
-        seed: int = 42,
-        sparse_structure_sampler_params: dict = {},
-        slat_sampler_params: dict = {},
-        formats: List[str] = ['mesh'],
-        mode: Literal['stochastic', 'multidiffusion'] = 'stochastic',
-    ):
-
-        torch.manual_seed(seed)
-        with torch.no_grad():
-            with torch.cuda.amp.autocast(dtype=self.VGGT_dtype):
-                aggregated_tokens_list, input_images = self.vggt_feat(image)
-        b, n, _, _ = aggregated_tokens_list[0].shape
-        image_cond = self.encode_image(image).reshape(b, n, -1, 1024)
-        
-        if coords is None:
-            with torch.no_grad():
-                ss_cond = self.get_ss_cond(image_cond[:, :, 5:], aggregated_tokens_list, num_samples)
-            ss = torch.zeros(64, 64, 64, dtype=torch.long, device=image_cond.device)
-            ss = ss.index_put_((input_points[:,0], input_points[:,1], input_points[:,2]), torch.tensor(1, dtype=ss.dtype, device=ss.device))
-            ss = ss[None, None]
-            torch.cuda.empty_cache()
-            # Sample structured latent
-            if ss_refine_type == 'noise':
-                coords = self.sample_sparse_structure_opt_noise(ss_cond, ss, ss_learning_rate, num_samples, sparse_structure_sampler_params, ss_noise)
-            elif ss_refine_type == 'deltav':
-                coords = self.sample_sparse_structure_opt(ss_cond, ss, ss_learning_rate, ss_start_t, num_samples, sparse_structure_sampler_params, ss_noise)
-            torch.cuda.empty_cache()
-
-        # pcd = o3d.geometry.PointCloud()
-        # pcd.points = o3d.utility.Vector3dVector(coords[:,1:].cpu().numpy() / 64 - 0.5)
-        # o3d.io.write_point_cloud('outputs/after_coords.ply', pcd)
-
-        # cond = {
-        #     'cond': image_cond.reshape(n, -1, 1024),
-        #     'neg_cond': torch.zeros_like(image_cond.reshape(n, -1, 1024))[:1],
-        # }
-        
-        # slat_steps = {**self.slat_sampler_params, **slat_sampler_params}.get('steps')
-
-        # with self.inject_sampler_multi_image('slat_sampler', len(image), slat_steps, mode=mode):
-        #     # slat = self.sample_slat(cond, coords, slat_sampler_params)
-        #     slat = self.sample_slat_opt(apperance_learning_rate, apperance_start_t, input_images, extrinsics, intrinsics, cond, coords, slat_sampler_params)
-        with torch.no_grad():
-            slat_cond = self.get_slat_cond(image_cond, aggregated_tokens_list, num_samples)
-        slat = self.sample_slat_opt(apperance_learning_rate, apperance_start_t, input_images, extrinsics, intrinsics, slat_cond, coords, slat_sampler_params)
-        return self.decode_slat(slat, formats)
-
     @staticmethod
     def from_pretrained(path: str) -> "TrellisVGGTTo3DPipeline":
         """
@@ -1070,11 +946,5 @@ class TrellisVGGTTo3DPipeline(TrellisImageTo3DPipeline):
         new_pipeline.slat_normalization = args['slat_normalization']
 
         new_pipeline._init_image_cond_model(args['image_cond_model'])
-
-        # for app_refine.py, please uncomment these lines
-        os.makedirs("weights", exist_ok=True)
-        model, _ = dreamsim(pretrained=True, device=new_pipeline.device, dreamsim_type="dino_vitb16", cache_dir="weights/dreamsim")
-        new_pipeline.dreamsim_model = model
-        new_pipeline.dreamsim_model.eval()
 
         return new_pipeline
