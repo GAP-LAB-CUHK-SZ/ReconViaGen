@@ -605,7 +605,7 @@ if __name__ == "__main__":
     pipeline = TrellisHybridPipeline(vggt_pipeline, trellis2_pipeline, low_vram=LOW_VRAM)
 
     # Load HDRI environment maps for PBR rendering
-    _HDRI_DIR = os.path.join('/root/jiahao/code/TRELLIS.2', 'assets', 'hdri')
+    _HDRI_DIR = os.path.join(_HERE, 'assets', 'hdri')
     envmap = EnvMap(torch.tensor(
         cv2.cvtColor(cv2.imread(os.path.join(_HDRI_DIR, 'courtyard.exr'), cv2.IMREAD_UNCHANGED), cv2.COLOR_BGR2RGB),
         dtype=torch.float32, device='cuda'
