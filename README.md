@@ -22,7 +22,7 @@ We welcome feedback on failure cases to help improve the model.
 
 ---
 
-**🆕 News** — We've fixed some bugs in the [v0.5 branch](https://github.com/GAP-LAB-CUHK-SZ/ReconViaGen/tree/v0.5?tab=readme-ov-file); please resynchronize with the remote repository.
+**🆕 News** — We've fixed some bugs in the [v0.5 branch](https://github.com/GAP-LAB-CUHK-SZ/ReconViaGen/tree/v0.5?tab=readme-ov-file); please resynchronize with the remote repository. And we also deployed a [demo](https://huggingface.co/spaces/Stable-X/ReconViaGen-v0.5) on the huggingface space.
 
 **🆕 News (v0.5)** — Releasing the inference code of ReconViaGen-v0.5 in the [v0.5 branch](https://github.com/GAP-LAB-CUHK-SZ/ReconViaGen/tree/v0.5?tab=readme-ov-file) of this repository! Thanks for the excellent work [TRELLIS.2](https://github.com/microsoft/TRELLIS.2)! We have proposed an effective multi-view fusion strategy for TRELLIS.2, and then we combine ReconViaGen with TRELLIS.2 to enable the generation of high-resolution meshes and PBR materials.
 For details, please refer to the [v0.5 branch](https://github.com/GAP-LAB-CUHK-SZ/ReconViaGen/tree/v0.5?tab=readme-ov-file) of this repository.
